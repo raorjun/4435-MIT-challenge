@@ -1,9 +1,4 @@
-
-# ============================================
-# Added by Indoor Nav Assistant setup script
-# ============================================
-
-# Flutter/Dart
+# Flutter / Dart
 mobile_app/.dart_tool/
 mobile_app/.flutter-plugins
 mobile_app/.flutter-plugins-dependencies
@@ -21,39 +16,17 @@ mobile_app/android/app/google-services.json
 
 # iOS
 mobile_app/ios/Flutter/
-mobile_app/ios/.symlinks/
-mobile_app/ios/Pods/
 
 # Python
 *.pyc
 __pycache__/
 *.py[cod]
-*$py.class
 venv/
 env/
 .venv/
-ml_models/*/venv/
-map_processing/venv/
 backend/venv/
 
-# ML Models
-ml_models/*/data/datasets/*
-!ml_models/*/data/datasets/.gitkeep
-ml_models/*/runs/
-*.pt
-*.onnx
-*.tflite
-!ml_models/sign_detection/models/best.pt
-
-# Data
-map_processing/data/raw_maps/*
-!map_processing/data/raw_maps/.gitkeep
-map_processing/data/processed_maps/*
-!map_processing/data/processed_maps/.gitkeep
-data_collection/wifi_fingerprinting/fingerprint_data/*
-!data_collection/wifi_fingerprinting/fingerprint_data/.gitkeep
-
-# Environment & Secrets
+# Environment & secrets
 .env
 .env.local
 *.key
@@ -67,16 +40,14 @@ mobile_app/lib/config/app_config.dart
 *~
 .DS_Store
 
-# Logs
+# Logs / temp
 *.log
 logs/
+tmp/
+temp/
+*.tmp
 
 # Database
 *.db
 *.sqlite
 *.sqlite3
-
-# Temporary files
-tmp/
-temp/
-*.tmp
