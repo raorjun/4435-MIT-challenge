@@ -1,4 +1,4 @@
-# AGENTS.md — Steplight
+# CLAUDE.md — Steplight
 
 ## What this app does
 
@@ -27,7 +27,7 @@ Think of it as a patient, encouraging guide in their pocket.
 │   ├── map_utils.py        # map/floor plan logic (placeholder)
 │   └── requirements.txt
 ├── mobile_app/             # Flutter project (run `flutter create mobile_app` to scaffold)
-├── AGENTS.md               # this file
+├── CLAUDE.md               # this file
 └── README.md
 ```
 

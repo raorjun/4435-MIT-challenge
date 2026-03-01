@@ -13,4 +13,4 @@ backend/        Flask API (VLM vision, map context)
 mobile_app/     Flutter app (camera, GPS, TTS/STT)  ← run flutter create to scaffold
 ```
 
-See [AGENTS.md](AGENTS.md) for architecture, setup, and development notes.
+See [CLAUDE.md](CLAUDE.md) for architecture, setup, and development notes.
