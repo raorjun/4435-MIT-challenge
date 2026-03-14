@@ -4,10 +4,7 @@ import '../theme/theme.dart';
 /// Semi-transparent narration overlay pinned to the bottom of the camera view.
 /// Displays the most recent VLM narration string.
 class NarrationBox extends StatelessWidget {
-  const NarrationBox({
-    super.key,
-    required this.text,
-  });
+  const NarrationBox({super.key, required this.text});
 
   final String text;
 
@@ -29,14 +26,9 @@ class NarrationBox extends StatelessWidget {
         label: 'Narration: $text',
         child: Text(
           text,
-          style: tt.bodyLarge?.copyWith(
-            color: AppTheme.onDark,
-            height: 1.5,
-          ),
+          style: tt.bodyLarge?.copyWith(color: AppTheme.onDark, height: 1.5),
         ),
       ),
     );
   }
 }
-
-

@@ -20,8 +20,9 @@ class SteplightApp extends StatelessWidget {
       builder: (context, child) {
         return MediaQuery(
           data: MediaQuery.of(context).copyWith(
-            textScaler: MediaQuery.textScalerOf(context)
-                .clamp(minScaleFactor: 1.0, maxScaleFactor: 2.5),
+            textScaler: MediaQuery.textScalerOf(
+              context,
+            ).clamp(minScaleFactor: 1.0, maxScaleFactor: 2.5),
           ),
           child: child!,
         );
@@ -30,4 +31,3 @@ class SteplightApp extends StatelessWidget {
     );
   }
 }
-

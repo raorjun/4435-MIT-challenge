@@ -40,7 +40,7 @@ class AppTheme {
       colorScheme: colorScheme,
       scaffoldBackgroundColor: pureBlack,
       // ← forced pure black
-      dialogTheme:             const DialogThemeData(backgroundColor: surfaceDark),
+      dialogTheme: const DialogThemeData(backgroundColor: surfaceDark),
       appBarTheme: const AppBarTheme(
         backgroundColor: pureBlack,
         foregroundColor: onDark,
@@ -60,7 +60,7 @@ class AppTheme {
       textTheme: GoogleFonts.lexendTextTheme(
         ThemeData(brightness: Brightness.dark).textTheme,
       ).apply(bodyColor: onDark, displayColor: onDark),
-      iconTheme:       const IconThemeData(color: secondaryCyan, size: 28),
+      iconTheme: const IconThemeData(color: secondaryCyan, size: 28),
       dividerTheme: const DividerThemeData(color: outlineColor, thickness: 1),
     );
   }

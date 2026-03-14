@@ -68,4 +68,3 @@ class SafeTapButton extends StatelessWidget {
     );
   }
 }
-
