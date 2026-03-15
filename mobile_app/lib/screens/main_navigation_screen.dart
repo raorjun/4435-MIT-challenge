@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../theme/theme.dart';
 import '../components/safe_tap_button.dart';
 import '../components/narration_box.dart';
+import '../components/camera_feed.dart';
 
 const String _kPlaceholderNarration =
     'Tap the on-screen button to repeat the last narration.';
@@ -117,14 +118,12 @@ class _CameraViewState extends State<_CameraView> {
                     width: 4,
                   ),
                 ),
-                child: const Center(
-                  child: Text(
-                    'Camera Feed',
-                    style: TextStyle(
-                      color: AppTheme.secondaryCyan,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w600,
-                    ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: const CameraFeedWindow(  // use camera widget
+                    width: double.infinity,
+                    height: double.infinity,
+                    showControls: true,
                   ),
                 ),
               ),
