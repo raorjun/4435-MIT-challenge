@@ -27,7 +27,7 @@ env/
 backend/venv/
 
 # Environment & secrets
-.env
+*.env
 .env.local
 *.key
 mobile_app/lib/config/app_config.dart
