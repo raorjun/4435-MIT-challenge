@@ -91,10 +91,6 @@ class _CameraFeedWindowState extends State<CameraFeedWindow> {
       decoration: BoxDecoration(
         color: Colors.black,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: const Color(0xFF7B8CFF),
-          width: 2,
-        ),
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(14),
