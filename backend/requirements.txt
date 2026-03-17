@@ -1,6 +1,6 @@
 # Steplight Backend Requirements
 flask>=3.0.0
 flask-cors
-google-generativeai
+google-genai
 python-dotenv
 Pillow
