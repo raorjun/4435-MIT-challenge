@@ -10,7 +10,7 @@ API_KEY = os.getenv("GOOGLE_API_KEY")
 genai.configure(api_key=API_KEY)
 model = genai.GenerativeModel("gemini-1.5-flash")
 
-def get_spatial_narration(image_bytes, destination, map_context = None):
+def get_spatial_narration(image_bytes, destination: str, map_context = None) -> str:
     img = Image.open(image_bytes)
     system_instructions = "prompt" #TODO: prompt
     context = f"\nMap context: {map_context}" if map_context else ""
