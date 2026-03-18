@@ -41,14 +41,14 @@ class _CameraFeedWindowState extends State<CameraFeedWindow> {
     widget.onStatusChanged?.call(status);
   }
 
-  void _setErrorStatus(String message) {
+  void _setErrorStatus(String message, {String? status}) {
     if (mounted) {
       setState(() {
         _error = message;
         _isInitialized = false;
       });
     }
-    _emitStatus(message);
+    _emitStatus(status ?? message);
   }
 
   Future<bool> _ensureCameraPermission() async {
@@ -56,7 +56,10 @@ class _CameraFeedWindowState extends State<CameraFeedWindow> {
     if (status.isGranted) return true;
 
     if (status.isPermanentlyDenied || status.isRestricted) {
-      _setErrorStatus('Camera permission denied. Enable it in Settings.');
+      _setErrorStatus(
+        'Camera permission denied. Enable it in Settings.',
+        status: 'Camera inaccessible',
+      );
       return false;
     }
 
@@ -64,9 +67,12 @@ class _CameraFeedWindowState extends State<CameraFeedWindow> {
     if (requestStatus.isGranted) return true;
 
     if (requestStatus.isPermanentlyDenied || requestStatus.isRestricted) {
-      _setErrorStatus('Camera permission denied. Enable it in Settings.');
+      _setErrorStatus(
+        'Camera permission denied. Enable it in Settings.',
+        status: 'Camera inaccessible',
+      );
     } else {
-      _setErrorStatus('Camera permission required');
+      _setErrorStatus('Camera permission required', status: 'Camera inaccessible');
     }
     return false;
   }
@@ -121,7 +127,10 @@ class _CameraFeedWindowState extends State<CameraFeedWindow> {
               ? 'Camera permission required'
               : 'Camera error: ${e.description ?? e.code}';
 
-      _setErrorStatus(message);
+      _setErrorStatus(
+        message,
+        status: isPermissionIssue ? 'Camera inaccessible' : null,
+      );
     } on TimeoutException {
       _setErrorStatus('Camera initialization timed out');
     } catch (e) {

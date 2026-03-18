@@ -179,12 +179,16 @@ class _StatusBar extends StatelessWidget {
         children: [
           Icon(Icons.circle, color: cs.secondary, size: 14),
           const SizedBox(width: 10),
-          Text(
-            label,
-            style: tt.titleMedium?.copyWith(
-              color: cs.secondary,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.5,
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: tt.titleMedium?.copyWith(
+                color: cs.secondary,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.5,
+              ),
             ),
           ),
         ],
