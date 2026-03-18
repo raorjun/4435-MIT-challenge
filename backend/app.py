@@ -15,3 +15,6 @@ def navigate():
     # implement map context and then call the vlm
 
 
+if __name__ == '__main__':
+    print('Starting Steplight Backend API...')
+    app.run(host='0.0.0.0', port=5000, debug=True)

@@ -60,11 +60,12 @@ Examples:
         context = f"\n\nMap Information:\n{map_context}\n"
     
     # User's navigation request
-    if destination.lower() == "describe the scene":
+    '''if destination.lower() == "describe the scene":
         user_ask = "Describe what you see in this image. Focus on identifying any visible signs, doors, hallways, or landmarks that could help with navigation."
     else:
-        user_ask = f"\n\nThe user wants to navigate to: {destination}. Based on what you see in this camera image, what is the next step?"
+        user_ask = f"\n\nThe user wants to navigate to: {destination}. Based on what you see in this camera image, what is the next step?"'''
     
+    user_ask = f"\n\nThe user wants to navigate to: {destination}. Based on what you see in this camera image, what is the next step?"
     # Construct final prompt
     prompt = system_instructions + context + user_ask
     
