@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../theme/theme.dart';
 import '../components/safe_tap_button.dart';
 import '../components/narration_box.dart';
 import '../components/camera_feed.dart';
+import '../theme/theme.dart';
 
 const String _kPlaceholderNarration =
     'Tap the on-screen button to repeat the last narration.';
@@ -25,8 +25,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
     return Scaffold(
-      backgroundColor: AppTheme.pureBlack,
+      backgroundColor: cs.scrim,
       body: IndexedStack(
         index: _selectedIndex,
         children: const [
@@ -44,25 +46,22 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         ],
       ),
       bottomNavigationBar: NavigationBar(
-        backgroundColor: AppTheme.pureBlack,
-        indicatorColor: AppTheme.primaryIndigo.withValues(alpha: 0.25),
         selectedIndex: _selectedIndex,
         onDestinationSelected: _onNavTap,
-        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.explore_outlined),
-            selectedIcon: Icon(Icons.explore, color: AppTheme.secondaryCyan),
+            selectedIcon: Icon(Icons.explore),
             label: 'Navigate',
           ),
           NavigationDestination(
             icon: Icon(Icons.bookmark_outline_rounded),
-            selectedIcon: Icon(Icons.bookmark_rounded, color: AppTheme.secondaryCyan),
+            selectedIcon: Icon(Icons.bookmark_rounded),
             label: 'Saved',
           ),
           NavigationDestination(
             icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings_rounded, color: AppTheme.secondaryCyan),
+            selectedIcon: Icon(Icons.settings_rounded),
             label: 'Settings',
           ),
         ],
@@ -81,29 +80,35 @@ class _CameraView extends StatefulWidget {
 }
 
 class _CameraViewState extends State<_CameraView> {
-  String _narration = _kPlaceholderNarration;
+  final String _narration = _kPlaceholderNarration;
+  String _cameraStatus = 'Initializing camera...';
+
+  void _updateCameraStatus(String status) {
+    if (!mounted || _cameraStatus == status) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _cameraStatus == status) return;
+      setState(() => _cameraStatus = status);
+    });
+  }
 
   void _repeatNarration() {
     HapticFeedback.lightImpact();
     // TODO: trigger TTS replay when backend is wired.
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(_narration, style: const TextStyle(fontSize: 18)),
-        backgroundColor: AppTheme.surfaceDark,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        duration: const Duration(seconds: 2),
-      ),
+      SnackBar(content: Text(_narration), duration: const Duration(seconds: 2)),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
     return SafeArea(
       child: Column(
         children: [
           // ── Status bar ──────────────────────────────────────────
-          _StatusBar(label: 'Camera Ready'),
+          _StatusBar(label: _cameraStatus),
 
           // ── Camera frame ────────────────────────────────────────
           Expanded(
@@ -111,19 +116,20 @@ class _CameraViewState extends State<_CameraView> {
               padding: const EdgeInsets.all(12),
               child: Container(
                 decoration: BoxDecoration(
-                  color: AppTheme.surfaceDark,
-                  borderRadius: BorderRadius.circular(16),
+                  color: cs.surface,
+                  borderRadius: BorderRadius.circular(AppTheme.cornerRadius),
                   border: Border.all(
-                    color: AppTheme.secondaryCyan,
+                    color: cs.secondary,
                     width: 4,
                   ),
                 ),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: const CameraFeedWindow(  // use camera widget
+                  borderRadius: BorderRadius.circular(AppTheme.cornerRadius),
+                  child: CameraFeedWindow( // use camera widget
                     width: double.infinity,
                     height: double.infinity,
                     showControls: true,
+                    onStatusChanged: _updateCameraStatus,
                   ),
                 ),
               ),
@@ -136,8 +142,8 @@ class _CameraViewState extends State<_CameraView> {
             child: SafeTapButton(
               label: 'Repeat Narration',
               icon: Icons.volume_up_rounded,
-              color: AppTheme.primaryIndigo,
-              textColor: AppTheme.pureBlack,
+              color: cs.primary,
+              textColor: cs.onPrimary,
               onTap: _repeatNarration,
               semanticsLabel: 'Repeat last narration',
             ),
@@ -163,19 +169,20 @@ class _StatusBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tt = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
 
     return Container(
       width: double.infinity,
-      color: AppTheme.pureBlack,
+      color: cs.scrim,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       child: Row(
         children: [
-          const Icon(Icons.circle, color: AppTheme.secondaryCyan, size: 14),
+          Icon(Icons.circle, color: cs.secondary, size: 14),
           const SizedBox(width: 10),
           Text(
             label,
             style: tt.titleMedium?.copyWith(
-              color: AppTheme.secondaryCyan,
+              color: cs.secondary,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.5,
             ),
@@ -202,6 +209,7 @@ class _PlaceholderPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tt = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
 
     return SafeArea(
       child: Center(
@@ -210,13 +218,13 @@ class _PlaceholderPage extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 72, color: AppTheme.secondaryCyan),
+              Icon(icon, size: 72, color: cs.secondary),
               const SizedBox(height: 24),
               Text(label, style: tt.headlineSmall),
               const SizedBox(height: 12),
               Text(
                 message,
-                style: tt.bodyLarge?.copyWith(color: Colors.white70),
+                style: tt.bodyLarge?.copyWith(color: cs.onSurface.withValues(alpha: 0.75)),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -226,8 +234,4 @@ class _PlaceholderPage extends StatelessWidget {
     );
   }
 }
-
-
-
-
 

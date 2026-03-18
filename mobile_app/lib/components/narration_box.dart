@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../theme/theme.dart';
 
 /// Semi-transparent narration overlay pinned to the bottom of the camera view.
 /// Displays the most recent VLM narration string.
@@ -11,22 +10,23 @@ class NarrationBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tt = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
 
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.80),
-        border: const Border(
-          top: BorderSide(color: AppTheme.secondaryCyan, width: 3),
+        color: cs.scrim.withValues(alpha: 0.80),
+        border: Border(
+          top: BorderSide(color: cs.secondary, width: 3),
         ),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       child: Semantics(
-        liveRegion: true, // tells screen readers to announce changes
+        liveRegion: true,
         label: 'Narration: $text',
         child: Text(
           text,
-          style: tt.bodyLarge?.copyWith(color: AppTheme.onDark, height: 1.5),
+          style: tt.bodyLarge?.copyWith(color: cs.onSurface, height: 1.5),
         ),
       ),
     );

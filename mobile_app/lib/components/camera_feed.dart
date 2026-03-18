@@ -1,18 +1,24 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
+import 'package:permission_handler/permission_handler.dart';
+import '../theme/theme.dart';
 
 /// Camera Feed Widget - Displays live camera in a specific area
 class CameraFeedWindow extends StatefulWidget {
   final double width;
   final double height;
   final bool showControls;
-  
+  final ValueChanged<String>? onStatusChanged;
+
   const CameraFeedWindow({
-    Key? key,
+    super.key,
     this.width = 300,
     this.height = 400,
     this.showControls = true,
-  }) : super(key: key);
+    this.onStatusChanged,
+  });
 
   @override
   State<CameraFeedWindow> createState() => _CameraFeedWindowState();
@@ -23,6 +29,7 @@ class _CameraFeedWindowState extends State<CameraFeedWindow> {
   List<CameraDescription>? _cameras;
   bool _isInitialized = false;
   String? _error;
+  static const Duration _cameraInitTimeout = Duration(seconds: 10);
 
   @override
   void initState() {
@@ -30,30 +37,96 @@ class _CameraFeedWindowState extends State<CameraFeedWindow> {
     _initializeCamera();
   }
 
+  void _emitStatus(String status) {
+    widget.onStatusChanged?.call(status);
+  }
+
+  void _setErrorStatus(String message) {
+    if (mounted) {
+      setState(() {
+        _error = message;
+        _isInitialized = false;
+      });
+    }
+    _emitStatus(message);
+  }
+
+  Future<bool> _ensureCameraPermission() async {
+    final status = await Permission.camera.status;
+    if (status.isGranted) return true;
+
+    if (status.isPermanentlyDenied || status.isRestricted) {
+      _setErrorStatus('Camera permission denied. Enable it in Settings.');
+      return false;
+    }
+
+    final requestStatus = await Permission.camera.request();
+    if (requestStatus.isGranted) return true;
+
+    if (requestStatus.isPermanentlyDenied || requestStatus.isRestricted) {
+      _setErrorStatus('Camera permission denied. Enable it in Settings.');
+    } else {
+      _setErrorStatus('Camera permission required');
+    }
+    return false;
+  }
+
   Future<void> _initializeCamera() async {
+    _emitStatus('Initializing camera...');
+    if (mounted) {
+      setState(() {
+        _error = null;
+        _isInitialized = false;
+      });
+    }
+
+    final hasPermission = await _ensureCameraPermission();
+    if (!hasPermission) return;
+
     try {
       // Get available cameras
-      _cameras = await availableCameras();
-      
+      _cameras = await availableCameras().timeout(_cameraInitTimeout);
+
       if (_cameras == null || _cameras!.isEmpty) {
-        setState(() => _error = 'No cameras found');
+        _setErrorStatus('No camera available');
         return;
       }
 
-      // Use the back camera (index 0) by default
+      final selectedCamera = _cameras!.firstWhere(
+        (camera) => camera.lensDirection == CameraLensDirection.back,
+        orElse: () => _cameras!.first,
+      );
+
+      // Prefer back camera, but fall back to first available camera.
       _controller = CameraController(
-        _cameras![0],
-        ResolutionPreset.high,
+        selectedCamera,
+        ResolutionPreset.medium,
         enableAudio: false,
       );
 
-      await _controller!.initialize();
-      
+      await _controller!.initialize().timeout(_cameraInitTimeout);
+
       if (mounted) {
         setState(() => _isInitialized = true);
+        _emitStatus('Camera Ready');
       }
+    } on CameraException catch (e) {
+      final isPermissionIssue =
+          e.code == 'CameraAccessDenied' ||
+          e.code == 'CameraAccessDeniedWithoutPrompt' ||
+          e.code == 'CameraAccessRestricted';
+
+      final message =
+          isPermissionIssue
+              ? 'Camera permission required'
+              : 'Camera error: ${e.description ?? e.code}';
+
+      _setErrorStatus(message);
+    } on TimeoutException {
+      _setErrorStatus('Camera initialization timed out');
     } catch (e) {
-      setState(() => _error = 'Camera error: $e');
+      final message = 'Camera error: $e';
+      _setErrorStatus(message);
     }
   }
 
@@ -64,17 +137,25 @@ class _CameraFeedWindowState extends State<CameraFeedWindow> {
     final newIndex = (currentIndex + 1) % _cameras!.length;
 
     final newCamera = _cameras![newIndex];
-    
+
     await _controller?.dispose();
-    
+
     _controller = CameraController(
       newCamera,
-      ResolutionPreset.high,
+      ResolutionPreset.medium,
       enableAudio: false,
     );
 
-    await _controller!.initialize();
-    setState(() {});
+    try {
+      await _controller!.initialize().timeout(_cameraInitTimeout);
+      setState(() {});
+      _emitStatus('Camera Ready');
+    } on CameraException catch (e) {
+      final message = 'Camera error: ${e.description ?? e.code}';
+      _setErrorStatus(message);
+    } on TimeoutException {
+      _setErrorStatus('Camera initialization timed out');
+    }
   }
 
   @override
@@ -85,15 +166,17 @@ class _CameraFeedWindowState extends State<CameraFeedWindow> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
     return Container(
       width: widget.width,
       height: widget.height,
       decoration: BoxDecoration(
-        color: Colors.black,
-        borderRadius: BorderRadius.circular(16),
+        color: cs.scrim,
+        borderRadius: BorderRadius.circular(AppTheme.cornerRadius),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(AppTheme.cornerRadius),
         child: Stack(
           children: [
             // Camera preview or error/loading state
@@ -105,8 +188,7 @@ class _CameraFeedWindowState extends State<CameraFeedWindow> {
               _buildCameraPreview(),
 
             // Controls overlay
-            if (widget.showControls && _isInitialized)
-              _buildControls(),
+            if (widget.showControls && _isInitialized) _buildControls(),
           ],
         ),
       ),
@@ -133,18 +215,20 @@ class _CameraFeedWindowState extends State<CameraFeedWindow> {
   }
 
   Widget _buildLoading() {
-    return const Center(
+    final cs = Theme.of(context).colorScheme;
+
+    return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           CircularProgressIndicator(
-            color: Color(0xFF00E5FF),
+            color: cs.secondary,
           ),
-          SizedBox(height: 16),
+          const SizedBox(height: 16),
           Text(
             'Initializing camera...',
             style: TextStyle(
-              color: Colors.white,
+              color: cs.onSurface,
               fontSize: 16,
             ),
           ),
@@ -154,22 +238,24 @@ class _CameraFeedWindowState extends State<CameraFeedWindow> {
   }
 
   Widget _buildError() {
+    final cs = Theme.of(context).colorScheme;
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(
+            Icon(
               Icons.error_outline,
-              color: Color(0xFFFF6B6B),
+              color: cs.error,
               size: 48,
             ),
             const SizedBox(height: 16),
             Text(
               _error ?? 'Camera error',
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: cs.onSurface,
                 fontSize: 16,
               ),
               textAlign: TextAlign.center,
@@ -184,10 +270,18 @@ class _CameraFeedWindowState extends State<CameraFeedWindow> {
                 _initializeCamera();
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF7B8CFF),
+                backgroundColor: cs.primary,
+                foregroundColor: cs.onPrimary,
               ),
               child: const Text('Retry'),
             ),
+            if ((_error ?? '').contains('Settings')) ...[
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: openAppSettings,
+                child: const Text('Open Settings'),
+              ),
+            ],
           ],
         ),
       ),
@@ -195,6 +289,8 @@ class _CameraFeedWindowState extends State<CameraFeedWindow> {
   }
 
   Widget _buildControls() {
+    final cs = Theme.of(context).colorScheme;
+
     return Positioned(
       bottom: 16,
       right: 16,
@@ -204,7 +300,8 @@ class _CameraFeedWindowState extends State<CameraFeedWindow> {
           if (_cameras != null && _cameras!.length > 1)
             FloatingActionButton(
               mini: true,
-              backgroundColor: const Color(0xFF7B8CFF),
+              backgroundColor: cs.primary,
+              foregroundColor: cs.onPrimary,
               onPressed: _switchCamera,
               child: const Icon(Icons.flip_camera_ios),
             ),
@@ -214,25 +311,24 @@ class _CameraFeedWindowState extends State<CameraFeedWindow> {
   }
 }
 
-
 /// Example: How to use the camera feed in your screen
 class CameraFeedExample extends StatelessWidget {
-  const CameraFeedExample({Key? key}) : super(key: key);
+  const CameraFeedExample({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
     return Scaffold(
-      backgroundColor: const Color(0xFF000000),
+      backgroundColor: cs.scrim,
       appBar: AppBar(
         title: const Text('Camera Feed'),
-        backgroundColor: const Color(0xFF7B8CFF),
+        backgroundColor: cs.primary,
       ),
       body: SafeArea(
         child: Column(
           children: [
             const SizedBox(height: 20),
-            
-            // Camera feed window - you can position this anywhere
             const Center(
               child: CameraFeedWindow(
                 width: 350,
@@ -240,13 +336,10 @@ class CameraFeedExample extends StatelessWidget {
                 showControls: true,
               ),
             ),
-            
             const SizedBox(height: 20),
-            
-            // Your other content below camera
-            const Text(
+            Text(
               'Camera feed above',
-              style: TextStyle(color: Colors.white, fontSize: 18),
+              style: TextStyle(color: cs.onSurface, fontSize: 18),
             ),
           ],
         ),
@@ -255,30 +348,28 @@ class CameraFeedExample extends StatelessWidget {
   }
 }
 
-
 /// Example: Camera feed in a corner (floating)
 class FloatingCameraExample extends StatelessWidget {
-  const FloatingCameraExample({Key? key}) : super(key: key);
+  const FloatingCameraExample({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
     return Scaffold(
-      backgroundColor: const Color(0xFF000000),
+      backgroundColor: cs.scrim,
       body: Stack(
         children: [
-          // Your main content
-          const Center(
+          Center(
             child: Text(
               'Main Content',
-              style: TextStyle(color: Colors.white, fontSize: 24),
+              style: TextStyle(color: cs.onSurface, fontSize: 24),
             ),
           ),
-          
-          // Floating camera feed in corner
-          Positioned(
+          const Positioned(
             top: 20,
             right: 20,
-            child: const CameraFeedWindow(
+            child: CameraFeedWindow(
               width: 200,
               height: 300,
               showControls: true,
@@ -289,3 +380,4 @@ class FloatingCameraExample extends StatelessWidget {
     );
   }
 }
+

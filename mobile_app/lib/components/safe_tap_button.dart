@@ -10,8 +10,8 @@ class SafeTapButton extends StatelessWidget {
     required this.label,
     required this.icon,
     required this.onTap,
-    this.color = AppTheme.primaryIndigo,
-    this.textColor = AppTheme.pureBlack,
+    this.color,
+    this.textColor,
     this.borderColor,
     this.height = 96,
     this.semanticsLabel,
@@ -20,8 +20,8 @@ class SafeTapButton extends StatelessWidget {
   final String label;
   final IconData icon;
   final VoidCallback onTap;
-  final Color color;
-  final Color textColor;
+  final Color? color;
+  final Color? textColor;
   final Color? borderColor;
   final double height;
 
@@ -31,6 +31,9 @@ class SafeTapButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tt = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
+    final resolvedColor = color ?? cs.primary;
+    final resolvedTextColor = textColor ?? cs.onPrimary;
 
     return Semantics(
       button: true,
@@ -43,8 +46,8 @@ class SafeTapButton extends StatelessWidget {
         child: Container(
           height: height,
           decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(20),
+            color: resolvedColor,
+            borderRadius: BorderRadius.circular(AppTheme.cornerRadius),
             border: borderColor != null
                 ? Border.all(color: borderColor!, width: 3)
                 : null,
@@ -52,12 +55,12 @@ class SafeTapButton extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 40, color: textColor),
+              Icon(icon, size: 40, color: resolvedTextColor),
               const SizedBox(width: 16),
               Text(
                 label,
-                style: tt.titleLarge?.copyWith(
-                  color: textColor,
+                style: tt.headlineSmall?.copyWith(
+                  color: resolvedTextColor,
                   fontWeight: FontWeight.w700,
                 ),
               ),
