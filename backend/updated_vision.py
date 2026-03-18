@@ -1,80 +1,44 @@
-"""
-Vision Module - Gemini VLM Integration
-Handles spatial narration and scene understanding for navigation
-"""
-
-import os
+import io
 from PIL import Image
 from google import genai
 from dotenv import load_dotenv
 
 load_dotenv()
-
-# Configure Gemini API
-API_KEY = os.getenv("GOOGLE_API_KEY")
-client = genai.Client(api_key=API_KEY)
+# The client automatically picks up the API key from os.environ["GOOGLE_API_KEY"]
+client = genai.Client()
 
 
-def get_spatial_narration(image_bytes, destination: str, map_context=None) -> str:
-    """
-    Analyze camera image and provide spatial navigation guidance
-    
-    Args:
-        image_bytes: Image file in bytes (BytesIO object)
-        destination: Where the user wants to go (e.g., "bathroom", "exit")
-        map_context: Optional floor plan or map information
-    
-    Returns:
-        str: Natural language navigation instruction
-    """
-    
-    # Open image
-    img = Image.open(image_bytes)
-    
-    # System instructions for navigation
-    system_instructions = """You are a navigation assistant for a visually impaired person using a camera to find their way.
+def get_spatial_narration(image_bytes, destination, map_context=None):
+    img = Image.open(io.BytesIO(image_bytes))
+    img = img.convert("RGB")
 
-Your task: Analyze the camera image and provide ONE clear, immediate navigation instruction.
+    # System instructions remain focused on Aditi's needs
+    system_instructions = """
+You are Steplight, a navigation assistant for Aditi, who has coloboma and is light-sensitive.
+Analyze the image and provide ONE clear instruction.
 
 Response format:
 1. DIRECTION: Turn left/right, continue straight, or stop
-2. DISTANCE: Estimate in feet (e.g., "15 feet", "30 feet")
-3. LANDMARK: Mention ONE visible sign, door, or feature to confirm location
+2. DISTANCE: Estimate in feet
+3. LANDMARK: Mention ONE visible feature (e.g., "blue door", "bright window")
 
 Rules:
-- Maximum 2 sentences
-- Be specific and confident
-- Use simple, direct language
-- Prioritize safety (mention obstacles if visible)
-- If destination is visible, say "You've arrived" or give final step
-
-Examples:
-"Turn left. The restroom sign is 15 feet ahead on your right."
-"Continue straight for 20 feet. You'll pass a water fountain on your left."
-"Stop. The exit door is directly in front of you, 5 feet ahead."
+- Max 2 sentences.
+- Use clock-face directions for landmarks (e.g., "elevator at 2 o'clock").
+- ALERT her to high-glare areas (skylights, windows).
 """
-    
-    # Add map context if available
-    context = ""
-    if map_context:
-        context = f"\n\nMap Information:\n{map_context}\n"
-    
-    # User's navigation request
-    '''if destination.lower() == "describe the scene":
-        user_ask = "Describe what you see in this image. Focus on identifying any visible signs, doors, hallways, or landmarks that could help with navigation."
-    else:
-        user_ask = f"\n\nThe user wants to navigate to: {destination}. Based on what you see in this camera image, what is the next step?"'''
-    
-    user_ask = f"\n\nThe user wants to navigate to: {destination}. Based on what you see in this camera image, what is the next step?"
-    # Construct final prompt
-    prompt = system_instructions + context + user_ask
-    
-    # Call Gemini VLM using new API
+
+    context = f"\n\nMap Context: {map_context}" if map_context else ""
+    user_ask = f"\n\nAditi wants to go to: {destination}. What is the next step?"
+
+    full_text_prompt = f"{system_instructions}{context}{user_ask}"
+
     try:
+        # Pass the image first, then the text for optimal processing
         response = client.models.generate_content(
-            model='models/gemini-3-flash-preview',
-            contents=[prompt, img]
+            model='gemini-3.1-flash-lite-preview',
+            contents=[img, full_text_prompt]
         )
         return response.text.strip()
     except Exception as e:
-        return f"Error getting navigation guidance: {str(e)}"
+        return f"Navigation error: {str(e)}"
