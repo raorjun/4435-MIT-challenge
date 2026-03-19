@@ -4,3 +4,5 @@ flask-cors
 google-genai
 python-dotenv
 Pillow
+opencage
+requests
