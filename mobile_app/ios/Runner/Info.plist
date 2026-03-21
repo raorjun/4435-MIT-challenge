@@ -47,5 +47,9 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Steplight uses the camera to provide live navigation assistance.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Steplight listens for your destination so navigation can adapt in real time.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Steplight converts speech to text to understand where you want to go.</string>
 </dict>
 </plist>

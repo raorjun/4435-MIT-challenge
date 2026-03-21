@@ -3,13 +3,13 @@ import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
   static const Color pureBlack = Color(0xFF000000);
-  static const Color surfaceDark = Color(0xFF120B12);
-  static const Color surfaceVariant = Color(0xFF1D1420);
+  static const Color surfaceDark = Color(0xFF000000);
+  static const Color surfaceVariant = Color(0xFF000000);
 
   // Mint-forward palette with a muted gray-pink navigation surface.
   static const Color primaryMint = Color(0xFFCFFFC9);
   static const Color secondarySeed = Color(0xFF9ED89C);
-  static const Color navBarBackground = Color(0xFF2C2730);
+  static const Color navBarBackground = Color(0xFF000000);
   static const Color inactiveLabel = Color(0xFFD0C0CA);
 
   static const Color onDark = Color(0xFFFFFFFF);

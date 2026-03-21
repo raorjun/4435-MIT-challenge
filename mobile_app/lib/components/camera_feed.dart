@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
@@ -21,15 +22,32 @@ class CameraFeedWindow extends StatefulWidget {
   });
 
   @override
-  State<CameraFeedWindow> createState() => _CameraFeedWindowState();
+  State<CameraFeedWindow> createState() => CameraFeedWindowState();
 }
 
-class _CameraFeedWindowState extends State<CameraFeedWindow> {
+class CameraFeedWindowState extends State<CameraFeedWindow> {
   CameraController? _controller;
   List<CameraDescription>? _cameras;
   bool _isInitialized = false;
+  bool _isCapturing = false;
   String? _error;
   static const Duration _cameraInitTimeout = Duration(seconds: 10);
+
+  Future<Uint8List?> captureFrameBytes() async {
+    if (!_isInitialized || _controller == null || _isCapturing) {
+      return null;
+    }
+
+    try {
+      _isCapturing = true;
+      final picture = await _controller!.takePicture();
+      return await picture.readAsBytes();
+    } catch (_) {
+      return null;
+    } finally {
+      _isCapturing = false;
+    }
+  }
 
   @override
   void initState() {
