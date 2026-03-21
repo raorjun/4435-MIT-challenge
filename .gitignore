@@ -51,3 +51,9 @@ temp/
 *.db
 *.sqlite
 *.sqlite3
+
+# Test Outputs
+*.json
+*.jpg
+*.jpeg
+*.png

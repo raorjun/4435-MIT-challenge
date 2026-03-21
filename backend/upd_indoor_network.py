@@ -364,7 +364,7 @@ def main():
         return
     
     # Build graph
-    graph = build_graph(shops, max_distance_ft=250, min_distance_ft=10)
+    graph = build_graph(shops, max_distance_ft=667, min_distance_ft=10)
     
     # Test navigation
     print("\n" + "=" * 60)
