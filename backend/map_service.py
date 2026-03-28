@@ -1,59 +1,71 @@
-from opencage.geocoder import OpenCageGeocode
 import os
-from dotenv import load_dotenv
 import requests
+import re
+from bs4 import BeautifulSoup
+from config import get_map_search_queries
 
-load_dotenv()
+
+def get_venue_context(latitude, longitude):
+    url = f"https://nominatim.openstreetmap.org/reverse?lat={latitude}&lon={longitude}&format=json"
+    headers = {'User-Agent': 'Steplight Navigation App'}
+
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        data = response.json()
+        address = data.get("address", {})
+        venue_name = address.get('mall') or address.get('retail') or address.get('commercial')
+        address_string = f"{address.get('house_number', '')} {address.get('road', '')}, {address.get('city', '')}".strip()
+
+        return venue_name, address_string
+    except Exception as e:
+        print(f"Nominatim Error: {e}")
+        return None, "Unknown Location"
 
 
-def get_public_space_name(lat, lng):
-    api_key = os.getenv("OPENCAGE_API_KEY")
-    if api_key is None:
-        print("No OpenCage API key provided")
+def find_venue_map(address_string, venue_name=None):
+    api_key = os.getenv("TAVILY_API_KEY")
+    if not api_key:
         return None
 
-    geocoder = OpenCageGeocode(api_key)
-    try:
-        results = geocoder.reverse_geocode(lat, lng)
-        if results and len(results) > 0:
-            components = results[0]['components']
-            space_name = (
-                    components.get('mall') or
-                    components.get('university') or
-                    components.get('aeroway') or
-                    components.get('hospital') or
-                    components.get('stadium') or
-                    components.get('theme_park') or
-                    components.get('building')
-            )
-            return space_name
-    except Exception as e:
-        print(f"Geocode error: {e}")
+    search_term = venue_name if venue_name else address_string
+    queries = get_map_search_queries(search_term)
+
+    headers = {"Content-Type": "application/json"}
+    url = "https://api.tavily.com/search"
+    for query in queries:
+        try:
+            payload = {"api_key": api_key, "query": query, "max_results": 3,
+                       "include_raw_content": True}
+            response = requests.post(url, json=payload, headers=headers, timeout=15)
+
+            if response.status_code != 200:
+                continue
+
+            data = response.json()
+            for result in data.get('results', []):
+                result_url = result.get('url', '')
+
+                # Direct file match
+                if result_url.endswith(('.pdf', '.jpg', '.jpeg', '.png')):
+                    return result_url
+
+                # Scrape aggregator sites
+                if 'all-maps.com' in result_url or 'mallseeker.com' in result_url:
+                    page_resp = requests.get(result_url, timeout=10,
+                                             headers={'User-Agent': 'Mozilla/5.0'})
+                    if page_resp.status_code == 200:
+                        soup = BeautifulSoup(page_resp.text, 'html.parser')
+                        for img in soup.find_all('img'):
+                            src = img.get('src', '')
+                            # Filter out thumbnails and icons
+                            if any(size in src.lower() for size in
+                                   ['-150x', 'thumbnail', '/logo', '/icon']):
+                                continue
+                            if any(ext in src.lower() for ext in ['.jpg', '.jpeg', '.png']):
+                                if src.startswith('//'): src = 'https:' + src
+                                return src
+        except Exception as e:
+            print(f"Tavily Search Error: {e}")
+            continue
+
     return None
-
-
-def get_indoor_landmarks(space_name):
-    if not space_name:
-        return []
-    overpass_url = "http://overpass-api.de/api/interpreter"
-    query = f"""
-    [out:json][timeout:15];
-    area[name="{space_name}"]->.searchArea;
-    (
-      node["name"](area.searchArea);
-      way["name"](area.searchArea);
-      relation["name"](area.searchArea);
-    );
-    out tags;
-    """
-    try:
-        response = requests.get(overpass_url, params={"data": query}, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-
-        landmarks = {el.get('tags', {}).get('name') for el in data.get('elements', [])}
-        clean_landmarks = [name for name in landmarks if name]
-        return clean_landmarks
-    except Exception as e:
-        print(f"Overpass error: {e}")
-        return []
