@@ -25,7 +25,7 @@ A technical prototype for a camera-to-speech navigation assistant. It uses a mob
 ├── mobile_app/             # Flutter project
 ├── CLAUDE.md
 └── README.md
-
+```
 ---
 
 ## Agent Rules (Technical Guardrails)
