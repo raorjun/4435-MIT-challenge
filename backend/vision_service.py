@@ -2,7 +2,10 @@ import json
 import os
 from google import genai
 from google.genai import types
+from dotenv import load_dotenv
 from config import EXTRACTION_PROMPT, get_navigation_prompt
+
+load_dotenv()
 
 client = genai.Client(api_key=os.getenv('GOOGLE_API_KEY'))
 
