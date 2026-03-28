@@ -16,9 +16,7 @@ class NarrationBox extends StatelessWidget {
       width: double.infinity,
       decoration: BoxDecoration(
         color: cs.scrim.withValues(alpha: 0.80),
-        border: Border(
-          top: BorderSide(color: cs.secondary, width: 3),
-        ),
+        border: Border(top: BorderSide(color: cs.secondary, width: 3)),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       child: Semantics(

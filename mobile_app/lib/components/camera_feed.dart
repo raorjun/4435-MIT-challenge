@@ -90,7 +90,10 @@ class CameraFeedWindowState extends State<CameraFeedWindow> {
         status: 'Camera inaccessible',
       );
     } else {
-      _setErrorStatus('Camera permission required', status: 'Camera inaccessible');
+      _setErrorStatus(
+        'Camera permission required',
+        status: 'Camera inaccessible',
+      );
     }
     return false;
   }
@@ -140,10 +143,9 @@ class CameraFeedWindowState extends State<CameraFeedWindow> {
           e.code == 'CameraAccessDeniedWithoutPrompt' ||
           e.code == 'CameraAccessRestricted';
 
-      final message =
-          isPermissionIssue
-              ? 'Camera permission required'
-              : 'Camera error: ${e.description ?? e.code}';
+      final message = isPermissionIssue
+          ? 'Camera permission required'
+          : 'Camera error: ${e.description ?? e.code}';
 
       _setErrorStatus(
         message,
@@ -248,16 +250,11 @@ class CameraFeedWindowState extends State<CameraFeedWindow> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          CircularProgressIndicator(
-            color: cs.secondary,
-          ),
+          CircularProgressIndicator(color: cs.secondary),
           const SizedBox(height: 16),
           Text(
             'Initializing camera...',
-            style: TextStyle(
-              color: cs.onSurface,
-              fontSize: 16,
-            ),
+            style: TextStyle(color: cs.onSurface, fontSize: 16),
           ),
         ],
       ),
@@ -273,18 +270,11 @@ class CameraFeedWindowState extends State<CameraFeedWindow> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.error_outline,
-              color: cs.error,
-              size: 48,
-            ),
+            Icon(Icons.error_outline, color: cs.error, size: 48),
             const SizedBox(height: 16),
             Text(
               _error ?? 'Camera error',
-              style: TextStyle(
-                color: cs.onSurface,
-                fontSize: 16,
-              ),
+              style: TextStyle(color: cs.onSurface, fontSize: 16),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
@@ -407,4 +397,3 @@ class FloatingCameraExample extends StatelessWidget {
     );
   }
 }
-

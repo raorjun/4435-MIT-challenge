@@ -1,41 +1,69 @@
-import io
-
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from vision_service import get_spatial_narration, VisionServiceError
+import requests
+
+from map_service import get_venue_context, find_venue_map
+from vision_service import extract_venue_data, get_spatial_narration
 
 app = Flask(__name__)
-CORS(app)  # needed for cross domain connection
+CORS(app)
+
+# Single-user cache: Holds the extracted JSON for the current venue
+venue_cache = {"current": {"bathrooms": [], "stores": [], "address": "Unknown"}}
+
+@app.route('/enter_venue', methods=['POST'])
+def enter_venue():
+    data = request.json
+    lat, lng = data.get('lat'), data.get('lng')
+
+    venue_name, address = get_venue_context(lat, lng)
+    map_url = find_venue_map(address, venue_name)
+
+    if not map_url:
+        return jsonify({"success": False, "message": "No map found. Using visual fallback."})
+
+    try:
+        map_resp = requests.get(map_url, timeout=15)
+        mime_type = 'image/png' if map_url.endswith('.png') else 'image/jpeg'
+
+        extracted_data = extract_venue_data(map_resp.content, mime_type)
+        extracted_data['address'] = address
+
+        venue_cache['current'] = extracted_data
+
+        return jsonify({
+            "success": True,
+            "venue": address,
+            "bathrooms_found": len(extracted_data.get('bathrooms', [])),
+            "stores_found": len(extracted_data.get('stores', []))
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
 
 
 @app.route("/vision/navigate", methods=["POST"])
 def navigate():
+    """Triggered EVERY 5 SECONDS by Flutter's camera loop."""
     image_file = request.files.get('image')
     destination = request.form.get('destination', 'the nearest exit')
     intent = request.form.get('intent', '')
-    _lat_raw = request.form.get('lat', '0.0')
-    _lng_raw = request.form.get('lng', '0.0')
 
     if not image_file:
         return jsonify({"error": "No image provided"}), 400
 
-    image_stream = io.BytesIO(image_file.read())
-    image_bytes = image_stream.getvalue()
-    map_context = None
+    image_bytes = image_file.read()
 
-    try:
-        narration = get_spatial_narration(
-            image_bytes,
-            destination,
-            user_intent=intent,
-            map_context=map_context,
-        )
-    except VisionServiceError as e:
-        return jsonify({"error": str(e)}), 502
+    # Grab the cached JSON (costs 0 API tokens!)
+    current_venue_data = venue_cache.get('current', {})
+    narration = get_spatial_narration(
+        camera_bytes=image_bytes,
+        destination=destination,
+        venue_data=current_venue_data,
+        user_intent=intent
+    )
 
     return jsonify({"narration": narration})
 
-
 if __name__ == '__main__':
-    print('Starting Backend API...')
+    print('Starting Steplight API...')
     app.run(host='0.0.0.0', port=5000, debug=True)
