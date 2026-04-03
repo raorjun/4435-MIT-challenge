@@ -19,8 +19,25 @@ def enter_venue():
     venue_name, address = get_venue_context(lat, lng)
     map_url = find_venue_map(address, venue_name)
 
+    # Always cache venue identity so the VLM knows where it is, even without a map
+    base_cache = {
+        "bathrooms": [],
+        "stores": [],
+        "address": address,
+        "venue_name": venue_name or "Unknown Venue",
+        "has_map": False,
+    }
+
     if not map_url:
-        return jsonify({"success": False, "message": "No map found. Using visual fallback."})
+        venue_cache['current'] = base_cache
+        return jsonify({
+            "success": True,
+            "venue": venue_name or address,
+            "bathrooms_found": 0,
+            "stores_found": 0,
+            "map_found": False,
+            "message": "No floor plan found — navigating by camera only."
+        })
 
     try:
         map_resp = requests.get(map_url, timeout=15)
@@ -28,16 +45,20 @@ def enter_venue():
 
         extracted_data = extract_venue_data(map_resp.content, mime_type)
         extracted_data['address'] = address
+        extracted_data['venue_name'] = venue_name or "Unknown Venue"
+        extracted_data['has_map'] = True
 
         venue_cache['current'] = extracted_data
 
         return jsonify({
             "success": True,
-            "venue": address,
+            "venue": venue_name or address,
             "bathrooms_found": len(extracted_data.get('bathrooms', [])),
-            "stores_found": len(extracted_data.get('stores', []))
+            "stores_found": len(extracted_data.get('stores', [])),
+            "map_found": True,
         })
     except Exception as e:
+        venue_cache['current'] = base_cache
         return jsonify({"success": False, "error": str(e)})
 
 

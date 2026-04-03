@@ -40,7 +40,11 @@ def get_spatial_narration(camera_bytes: bytes, destination: str, venue_data: dic
     stores_list = "\n".join([f"- {s.get('name', 'Store')}: {s.get('location', '')}" for s in
                              venue_data.get('stores', [])[:25]])
 
-    full_prompt = get_navigation_prompt(bathrooms_list, stores_list, destination, user_intent)
+    full_prompt = get_navigation_prompt(
+        bathrooms_list, stores_list, destination, user_intent,
+        venue_name=venue_data.get('venue_name', ''),
+        has_map=venue_data.get('has_map', False),
+    )
 
     try:
         response = client.models.generate_content(
