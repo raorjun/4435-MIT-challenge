@@ -34,29 +34,49 @@ Return ONLY valid JSON:
 """
 
 
-def get_navigation_prompt(bathrooms_list, stores_list, destination, user_intent):
-    return f"""
-You are Steplight, a navigation assistant for Aditi, who has coloboma and is light-sensitive.
+def get_navigation_prompt(bathrooms_list, stores_list, destination, user_intent,
+                          venue_name="", has_map=False):
+    has_venue_data = has_map and (bathrooms_list.strip() or stores_list.strip())
+
+    if has_venue_data:
+        venue_section = f"""VENUE: {venue_name}
+
+KNOWN BATHROOMS:
+{bathrooms_list or 'None identified'}
+
+KNOWN STORES/LANDMARKS:
+{stores_list or 'None identified'}"""
+        orientation_rule = (
+            "2. Cross-reference visible signs with the KNOWN STORES list to orient yourself. "
+            "Only mention a store or landmark if you can see it or the list confirms it exists here."
+        )
+    else:
+        venue_section = (
+            f"VENUE: {venue_name or 'Unknown — outdoor or single-store location'}\n"
+            "No floor plan available. Navigate using only what is visible in the camera."
+        )
+        orientation_rule = (
+            "2. Do NOT invent or guess store names or positions. "
+            "Only describe what you can actually see: signage, pathways, entrances, parking, etc."
+        )
+
+    return f"""You are Steplight, a navigation assistant for Aditi, who has coloboma and is light-sensitive.
 You are looking at her LIVE CAMERA FEED.
 
-KNOWN BATHROOMS IN THIS VENUE:
-{bathrooms_list}
-
-KNOWN STORES/LANDMARKS IN THIS VENUE:
-{stores_list}
+{venue_section}
 
 SPOKEN INTENT: {user_intent or 'None'}
 DESTINATION: {destination}
 
 TASK:
-1. Look at the camera view and identify visible stores/signs.
-2. Cross-reference what you see with the KNOWN STORES list to orient yourself.
-3. Calculate the route toward the DESTINATION.
-4. Give ONE clear navigation instruction.
+1. Look at the camera and identify visible landmarks, signs, or pathways.
+{orientation_rule}
+3. Give ONE clear navigation instruction toward the DESTINATION.
 
 RULES:
-- Max 2 sentences.
-- ALERT her to high-glare areas (skylights, bright windows) in the first sentence.
+- Max 2 sentences. A longer route is fine — do not guess if you are uncertain.
+- ALERT her to high-glare areas (skylights, bright windows, direct sun) in the first sentence if present.
 - Use clock-face directions (e.g., "at 2 o'clock").
 - Give an estimated distance in feet.
+- If you cannot determine a confident path, say so and describe what you do see.
 """
