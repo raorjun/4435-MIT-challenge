@@ -16,14 +16,15 @@ def get_venue_context(latitude, longitude):
 
     url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
 
-    # (type, radius_m) — tighter for indoor venues, looser for airports/campuses
+    # Search for LARGE venues first (the building/complex)
+    # Then fall back to smaller venues if nothing found
     searches = [
-        ("shopping_mall", 200),
+        ("shopping_mall", 1000),      # Big radius - find the mall building
         ("airport", 2000),
-        ("hospital", 500),
-        ("university", 1000),
-        ("store", 150),
-        ("point_of_interest", 300),
+        ("hospital", 1000),
+        ("university", 2000),
+        ("transit_station", 1500),
+        ("establishment", 500),       # Fallback - any establishment
     ]
 
     for place_type, radius in searches:
@@ -33,30 +34,39 @@ def get_venue_context(latitude, longitude):
                 "radius": radius,
                 "type": place_type,
                 "key": api_key,
+                "rankby": "prominence"  # ADD THIS - returns most prominent (mall > store)
             }
+            # Note: Can't use both radius and rankby, so remove radius when using rankby
+            # Let's use radius for now
+            params = {
+                "location": f"{latitude},{longitude}",
+                "radius": radius,
+                "type": place_type,
+                "key": api_key,
+            }
+            
             response = requests.get(url, params=params, timeout=10)
             data = response.json()
             results = data.get("results", [])
+            
             if not results:
                 continue
 
-            place = results[0]
-            name = place.get("name", "")
-            vicinity = place.get("vicinity", "Unknown Location")
-
-            # If Google returned a single generic word ("Mall", "Store"), use the
-            # first meaningful segment of the vicinity string as the venue name instead.
-            if name.lower() in _GENERIC_NAMES or len(name) <= 5:
-                first_segment = vicinity.split(",")[0].strip()
-                if len(first_segment) > len(name):
-                    name = first_segment
+            # Get the LARGEST result (mall building, not stores inside)
+            # Google returns by distance, so first result might be a store
+            # Look for the one with most reviews or highest rating (indicates main venue)
+            best_place = max(results, key=lambda p: p.get('user_ratings_total', 0))
+            
+            name = best_place.get("name", "")
+            vicinity = best_place.get("vicinity", "Unknown Location")
 
             print(f"Google Places found [{place_type}]: {name} | {vicinity}")
             return name, vicinity
+            
         except Exception as e:
             print(f"Google Places Error ({place_type}): {e}")
 
-    print("Google Places returned no results for these coordinates.")
+    print("Google Places returned no results.")
     return None, "Unknown Location"
 
 
