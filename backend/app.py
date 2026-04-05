@@ -40,21 +40,37 @@ def enter_venue():
         })
 
     try:
-        map_resp = requests.get(map_url, timeout=15)
-        mime_type = 'image/png' if map_url.endswith('.png') else 'image/jpeg'
-
-        extracted_data = extract_venue_data(map_resp.content, mime_type)
-        extracted_data['address'] = address
-        extracted_data['venue_name'] = venue_name or "Unknown Venue"
-        extracted_data['has_map'] = True
+        # Handle list or single URL
+        if isinstance(map_url, str):
+            map_url = [map_url]
+        
+        all_bathrooms = []
+        all_stores = []
+        
+        for single_map_url in map_url:
+            map_resp = requests.get(single_map_url, timeout=15)
+            mime_type = 'image/webp' if single_map_url.endswith('.webp') else 'image/jpeg'
+            
+            data = extract_venue_data(map_resp.content, mime_type, single_map_url)  # Pass URL here
+            all_bathrooms.extend(data.get('bathrooms', []))
+            all_stores.extend(data.get('stores', []))
+        
+        extracted_data = {
+            'bathrooms': all_bathrooms,
+            'stores': all_stores,
+            'address': address,
+            'venue_name': venue_name or "Unknown Venue",
+            'has_map': True,
+            'map_url': map_url  # Store the list of URLs
+        }
 
         venue_cache['current'] = extracted_data
 
         return jsonify({
             "success": True,
             "venue": venue_name or address,
-            "bathrooms_found": len(extracted_data.get('bathrooms', [])),
-            "stores_found": len(extracted_data.get('stores', [])),
+            "bathrooms_found": len(all_bathrooms),
+            "stores_found": len(all_stores),
             "map_found": True,
         })
     except Exception as e:
@@ -84,6 +100,11 @@ def navigate():
     )
 
     return jsonify({"narration": narration})
+
+@app.route('/debug/cache', methods=['GET'])
+def debug_cache():
+    """Show what's currently cached"""
+    return jsonify(venue_cache.get('current', {}))
 
 if __name__ == '__main__':
     print('Starting Steplight API...')

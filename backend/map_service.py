@@ -123,10 +123,13 @@ def find_venue_map(address_string, venue_name=None):
 
                 # 2. Scrape known map aggregator sites
                 if any(site in result_url for site in ['all-maps.com', 'mallseeker.com', 'mallscenters.com']):
+                    print(f"Found map page: {result_url}")
                     page_resp = requests.get(result_url, timeout=10,
-                                             headers={'User-Agent': 'Mozilla/5.0'})
+                                            headers={'User-Agent': 'Mozilla/5.0'})
                     if page_resp.status_code == 200:
                         soup = BeautifulSoup(page_resp.text, 'html.parser')
+                        found_maps = []  # COLLECT all maps
+                        
                         for img in soup.find_all('img'):
                             src = img.get('src', '')
                             if not src:
@@ -138,8 +141,12 @@ def find_venue_map(address_string, venue_name=None):
 
                             alt_text = img.get('alt', '').lower()
                             src_lower = src.lower()
+                            
+                            # Skip thumbnails
+                            if any(size in src_lower for size in ['-768x', '-300x', '-150x', '-1024x', 'thumbnail']):
+                                continue
 
-                            is_map_type = any(k in src_lower or k in alt_text for k in ['map', 'directory', 'floor', 'plan'])
+                            is_map_type = any(k in src_lower or k in alt_text for k in ['map', 'directory', 'floor', 'plan', 'level'])
                             matches_venue = True
                             if venue_keywords:
                                 matches_venue = any(k in src_lower or k in alt_text for k in venue_keywords)
@@ -152,8 +159,13 @@ def find_venue_map(address_string, venue_name=None):
                                 continue
 
                             if any(ext in src_lower for ext in ['.jpg', '.jpeg', '.png', '.webp']):
-                                print(f"Found map candidate for {venue_name}: {src}")
-                                return src
+                                if src not in found_maps:  # Avoid duplicates
+                                    found_maps.append(src)
+                                    print(f"Found map: {src}")
+                        
+                        if found_maps:
+                            print(f"Found {len(found_maps)} map(s)")
+                            return found_maps  # Return LIST, not single URL
 
         except Exception as e:
             print(f"Tavily Search Error: {e}")
