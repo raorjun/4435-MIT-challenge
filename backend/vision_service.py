@@ -12,9 +12,12 @@ load_dotenv()
 client = genai.Client(api_key=os.getenv('GOOGLE_API_KEY'))
 
 
+_GEMINI_MODEL = 'gemini-2.0-flash-lite'
+
+
 def extract_venue_data(map_bytes: bytes, mime_type: str, map_url: str = ""):
     """Extract data from a single map, with optional floor number from URL"""
-    
+
     # Try to extract floor number from URL
     floor_number = None
     if map_url:
@@ -22,10 +25,10 @@ def extract_venue_data(map_bytes: bytes, mime_type: str, map_url: str = ""):
         if floor_match:
             floor_number = floor_match.group(1)
             print(f"  Detected floor from URL: {floor_number}")
-    
+
     try:
         response = client.models.generate_content(
-            model='gemini-3.1-flash-lite-preview',
+            model=_GEMINI_MODEL,
             contents=[
                 types.Part.from_bytes(data=map_bytes, mime_type=mime_type),
                 EXTRACTION_PROMPT
@@ -58,15 +61,23 @@ def extract_venue_data(map_bytes: bytes, mime_type: str, map_url: str = ""):
 
 
 def get_spatial_narration(camera_bytes: bytes, destination: str, venue_data: dict,
-                          user_intent: str = ""):
-    bathrooms_list = "\n".join([f"- {b.get('name', 'Restroom')} (Floor {b.get('floor', '?')}): near {', '.join(b.get('nearest_stores', []))}"
-    for b in venue_data.get('bathrooms', [])])
+                          user_intent: str = "", narration_style: str = "Concise"):
+    bathrooms_list = "\n".join([
+        f"- {b.get('name', 'Restroom')} (Floor {b.get('floor', '?')}): near {', '.join(b.get('nearest_stores', []))}"
+        for b in venue_data.get('bathrooms', [])
+    ])
 
-    stores_list = "\n".join([f"- {s.get('name', 'Store')}: {s.get('location', '')}" for s in
-                             venue_data.get('stores', [])[:25]])
+    stores_list = "\n".join([
+        f"- {s.get('name', 'Store')}: {s.get('location', '')}"
+        for s in venue_data.get('stores', [])[:25]
+    ])
+
+    venue_name = venue_data.get('venue_name', 'Unknown Location')
+    has_map = venue_data.get('has_map', False)
 
     full_prompt = get_navigation_prompt(
-        bathrooms_list, stores_list, destination, user_intent
+        bathrooms_list, stores_list, destination, user_intent,
+        venue_name=venue_name, has_map=has_map, narration_style=narration_style
     )
 
     try:
@@ -89,7 +100,7 @@ def get_spatial_narration(camera_bytes: bytes, destination: str, venue_data: dic
         contents.append(full_prompt)
         
         response = client.models.generate_content(
-            model='gemini-3.1-flash-lite-preview',
+            model=_GEMINI_MODEL,
             contents=contents
         )
         return response.text.strip()

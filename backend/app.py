@@ -1,3 +1,4 @@
+import time
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
@@ -10,6 +11,11 @@ CORS(app)
 
 # Single-user cache: Holds the extracted JSON for the current venue
 venue_cache = {"current": {"bathrooms": [], "stores": [], "address": "Unknown"}}
+
+# Server-side rate limiter: minimum seconds between Gemini navigation calls.
+# Flutter sends every 15 s; this guard prevents burst replay on reconnect.
+_MIN_NAVIGATE_INTERVAL = 12  # seconds
+_last_navigate_time: float = 0.0
 
 @app.route('/enter_venue', methods=['POST'])
 def enter_venue():
@@ -80,14 +86,24 @@ def enter_venue():
 
 @app.route("/vision/navigate", methods=["POST"])
 def navigate():
-    """Triggered EVERY 5 SECONDS by Flutter's camera loop."""
+    """Triggered by Flutter's camera loop (every 15 s)."""
+    global _last_navigate_time
+
     image_file = request.files.get('image')
     destination = request.form.get('destination', 'the nearest exit')
     intent = request.form.get('intent', '')
+    narration_style = request.form.get('narration_style', 'Concise')
 
     if not image_file:
         return jsonify({"error": "No image provided"}), 400
 
+    # Rate guard — silently skip if called too soon
+    now = time.time()
+    if now - _last_navigate_time < _MIN_NAVIGATE_INTERVAL:
+        remaining = int(_MIN_NAVIGATE_INTERVAL - (now - _last_navigate_time))
+        return jsonify({"narration": f"Processing — next update in {remaining}s."})
+
+    _last_navigate_time = now
     image_bytes = image_file.read()
 
     # Grab the cached JSON (costs 0 API tokens!)
@@ -96,7 +112,8 @@ def navigate():
         camera_bytes=image_bytes,
         destination=destination,
         venue_data=current_venue_data,
-        user_intent=intent
+        user_intent=intent,
+        narration_style=narration_style,
     )
 
     return jsonify({"narration": narration})

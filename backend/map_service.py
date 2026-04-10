@@ -1,3 +1,4 @@
+import math
 import os
 import requests
 from bs4 import BeautifulSoup
@@ -7,24 +8,58 @@ from urllib.parse import urljoin
 _GENERIC_NAMES = {"mall", "store", "shop", "market", "center", "centre", "plaza"}
 
 
+def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Great-circle distance in kilometres between two lat/lng points."""
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlng = math.radians(lng2 - lng1)
+    a = (math.sin(dlat / 2) ** 2
+         + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2))
+         * math.sin(dlng / 2) ** 2)
+    return R * 2 * math.asin(math.sqrt(a))
+
+
+def _closest_result_within(results: list, lat: float, lng: float, radius_m: int):
+    """
+    Return the result closest to (lat, lng) that is actually within radius_m.
+    Falls back to None if every candidate is farther away than the radius.
+    This prevents picking a high-review venue that's miles away.
+    """
+    best = None
+    best_dist = float('inf')
+    for r in results:
+        geo = r.get('geometry', {}).get('location', {})
+        rlat, rlng = geo.get('lat'), geo.get('lng')
+        if rlat is None or rlng is None:
+            continue
+        dist_km = _haversine_km(lat, lng, rlat, rlng)
+        dist_m = dist_km * 1000
+        # Accept up to 20 % beyond the declared radius to handle API rounding
+        if dist_m <= radius_m * 1.2 and dist_km < best_dist:
+            best_dist = dist_km
+            best = r
+    return best
+
+
 def get_venue_context(latitude, longitude):
     """Return (venue_name, address_string) for the given coordinates."""
-    api_key = os.getenv("GOOGLE_MAPS_KEY")
+    # Accept either key name so users don't need two separate variables
+    api_key = os.getenv("GOOGLE_MAPS_KEY") or os.getenv("GOOGLE_API_KEY")
     if not api_key:
-        print("Error: GOOGLE_MAPS_KEY not found.")
+        print("Error: GOOGLE_MAPS_KEY (or GOOGLE_API_KEY) not found.")
         return None, "Unknown Location"
 
     url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
 
-    # Search for LARGE venues first (the building/complex)
-    # Then fall back to smaller venues if nothing found
+    # Ordered by priority: campus/building types before airport so a university
+    # library doesn't resolve to an airport across town.
     searches = [
-        ("shopping_mall", 1000),      # Big radius - find the mall building
-        ("airport", 2000),
+        ("shopping_mall", 800),
+        ("university", 1500),
         ("hospital", 1000),
-        ("university", 2000),
-        ("transit_station", 1500),
-        ("establishment", 500),       # Fallback - any establishment
+        ("transit_station", 1000),
+        ("airport", 1500),
+        ("establishment", 400),   # last-resort fallback
     ]
 
     for place_type, radius in searches:
@@ -34,39 +69,34 @@ def get_venue_context(latitude, longitude):
                 "radius": radius,
                 "type": place_type,
                 "key": api_key,
-                "rankby": "prominence"  # ADD THIS - returns most prominent (mall > store)
             }
-            # Note: Can't use both radius and rankby, so remove radius when using rankby
-            # Let's use radius for now
-            params = {
-                "location": f"{latitude},{longitude}",
-                "radius": radius,
-                "type": place_type,
-                "key": api_key,
-            }
-            
+
             response = requests.get(url, params=params, timeout=10)
             data = response.json()
             results = data.get("results", [])
-            
+
             if not results:
                 continue
 
-            # Get the LARGEST result (mall building, not stores inside)
-            # Google returns by distance, so first result might be a store
-            # Look for the one with most reviews or highest rating (indicates main venue)
-            best_place = max(results, key=lambda p: p.get('user_ratings_total', 0))
-            
+            # Pick the closest result that is genuinely within the search radius.
+            # Do NOT use max(user_ratings_total) — it favours famous far-away venues.
+            best_place = _closest_result_within(results, latitude, longitude, radius)
+            if best_place is None:
+                print(f"  [{place_type}] All results outside {radius} m — skipping.")
+                continue
+
             name = best_place.get("name", "")
             vicinity = best_place.get("vicinity", "Unknown Location")
-
-            print(f"Google Places found [{place_type}]: {name} | {vicinity}")
+            geo = best_place.get('geometry', {}).get('location', {})
+            dist_km = _haversine_km(latitude, longitude,
+                                    geo.get('lat', latitude), geo.get('lng', longitude))
+            print(f"Google Places found [{place_type}] {dist_km*1000:.0f} m away: {name} | {vicinity}")
             return name, vicinity
-            
+
         except Exception as e:
             print(f"Google Places Error ({place_type}): {e}")
 
-    print("Google Places returned no results.")
+    print("Google Places returned no results within range.")
     return None, "Unknown Location"
 
 

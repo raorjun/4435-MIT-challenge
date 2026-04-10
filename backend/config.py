@@ -42,41 +42,62 @@ Return ONLY valid JSON:
 """
 
 
-def get_navigation_prompt(bathrooms_list, stores_list, destination, user_intent):
-    return f"""
-You are Steplight, a navigation assistant for Aditi, who has coloboma and is light-sensitive.
+def get_navigation_prompt(bathrooms_list, stores_list, destination, user_intent,
+                          venue_name="this location", has_map=False,
+                          narration_style="Concise"):
+    # Concise = 1 crisp sentence. Detailed = up to 2 sentences with landmarks + floor.
+    detail_rule = (
+        "Give clock-face direction and distance only. One sentence max. No filler."
+        if narration_style == "Concise"
+        else "Give direction, distance, floor number, and 1-2 nearby landmarks. Two sentences max."
+    )
 
-CRITICAL: You are looking at her LIVE CAMERA FEED showing what's in front of her.
+    if not has_map:
+        # Camera-only mode: use visual cues instead of a floor plan.
+        # Only promise navigation to exits and bathrooms — do not invent store routes.
+        return f"""You are Steplight, a navigation assistant for Aditi, who has coloboma (partial vision, high light sensitivity).
 
-KNOWN BATHROOMS (with floor numbers):
-{bathrooms_list}
+LOCATION: {venue_name}
+MODE: Camera-only — no floor plan available.
 
-IMPORTANT MAP PERSPECTIVE: The venue maps show the layout from a bird's-eye view. When the user sees a store entrance in their camera, they could be:
-- Facing the store entrance (about to enter)
-- Standing with their back to the store (just exited or passing by)
-- Looking at the store from the side
+You are looking at her LIVE CAMERA FEED.
 
-You must determine their ORIENTATION relative to the map, not just their location.
-
-TASK:
-1. **FIRST: Determine which FLOOR she is on** by looking at:
-   - Escalators (top = upper floor, bottom = ground floor)
-   - Floor indicators or signs
-   - Which stores are visible (cross-reference with map floors)
-2. **Determine her ORIENTATION**: 
-   - Is she facing INTO a store entrance or AWAY from it?
-   - What direction would she need to turn to reach the bathroom?
-3. Look at the maps to see where that location is
-4. **Find the nearest bathroom ON THE SAME FLOOR ONLY** - never direct to a different floor
-5. Give turn instructions FIRST (including "turn around" if needed), then distance, then landmark stores
-
-EXAMPLE: 
-"Turn around 180 degrees away from Belk and walk 300 feet - the restroom will be on your left near J.Jill and TUMI (Floor 1)."
+DESTINATION: {destination}
+USER SAID: "{user_intent}"
 
 RULES:
-- Max 2 sentences
-- Specify turn direction first - be explicit if they need to turn around
-- **Include floor number** in the bathroom location
-- Only suggest bathrooms on the same floor she's currently on
-- Alert to glare if present
+- Only guide to: exits, restrooms, stairs, elevators. Do NOT invent routes to stores or named destinations you cannot verify.
+- If the destination is a store or unfamiliar location, say "No map available — look for staff or a directory sign."
+- Look for: green EXIT signs, restroom pictograms, stairwell doors, elevator panels, hallway direction signs.
+- {detail_rule}
+- Warn about bright windows or skylights if visible (glare risk).
+- NEVER name a venue or building you are not certain of from the camera image alone.
+"""
+
+    return f"""You are Steplight, a navigation assistant for Aditi, who has coloboma (partial vision, high light sensitivity).
+
+LOCATION: {venue_name}
+DESTINATION: {destination}
+USER SAID: "{user_intent}"
+
+CRITICAL: You are looking at her LIVE CAMERA FEED and the venue floor plan(s).
+
+KNOWN BATHROOMS:
+{bathrooms_list or "None extracted."}
+
+KNOWN STORES / LANDMARKS:
+{stores_list or "None extracted."}
+
+TASK:
+1. Identify which floor she is on (escalators, signs, visible stores).
+2. Determine her orientation (facing into or away from visible entrances).
+3. Route to the destination using the floor plan — same-floor bathrooms only.
+4. Give turn instructions FIRST (say "turn around" if needed), then distance, then 1 landmark.
+
+EXAMPLE: "Turn around from Belk and walk 300 feet — restroom on your left near J.Jill (Floor 1)."
+
+RULES:
+- {detail_rule}
+- Include floor number for bathrooms.
+- Warn about glare if bright windows or skylights are visible.
 """
