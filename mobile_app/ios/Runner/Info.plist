@@ -45,6 +45,8 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Steplight uses your location to identify the venue and load its floor plan for navigation.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Steplight uses the camera to provide live navigation assistance.</string>
 	<key>NSMicrophoneUsageDescription</key>
