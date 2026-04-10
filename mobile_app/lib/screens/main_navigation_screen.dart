@@ -334,7 +334,9 @@ class _CameraViewState extends State<_CameraView> {
       if (!_isSttReady) return;
     }
 
-    final hasStarted = await _stt.listen(
+    // `listen()` is typed Future<bool> but some native implementations return null.
+    // Receive as dynamic and compare with == true to avoid the cast crash.
+    final dynamic listenResult = await _stt.listen(
       onResult: (result) {
         if (!mounted) return;
         final spoken = result.recognizedWords.trim();
@@ -352,6 +354,7 @@ class _CameraViewState extends State<_CameraView> {
         partialResults: true,
       ),
     );
+    final bool hasStarted = listenResult == true;
 
     if (!mounted) return;
     setState(() {
@@ -453,6 +456,21 @@ class _CameraViewState extends State<_CameraView> {
       final streamed = await request.send().timeout(_requestTimeout);
       final responseBody =
           await streamed.stream.bytesToString().timeout(_requestTimeout);
+
+      // 503 = backend rate-limited by Gemini; back off and restart timer later.
+      if (streamed.statusCode == 503 || streamed.statusCode == 429) {
+        if (!mounted) return;
+        const busyMsg = 'System busy — will retry shortly.';
+        setState(() => _narration = busyMsg);
+        await _speakNarration('System busy, waiting.');
+        _stopCaptureLoop();
+        Future.delayed(const Duration(seconds: 20), () {
+          if (mounted && widget.isActive && _venueInitialized) {
+            _startCaptureLoop();
+          }
+        });
+        return;
+      }
 
       if (streamed.statusCode != 200) {
         if (!mounted) return;
