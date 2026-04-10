@@ -9,7 +9,7 @@ class AppTheme {
   // Mint-forward palette with a muted gray-pink navigation surface.
   static const Color primaryMint = Color(0xFFCFFFC9);
   static const Color secondarySeed = Color(0xFF9ED89C);
-  static const Color navBarBackground = Color(0xFF000000);
+  static const Color navBarBackground = Color(0xFF212121); // grey[900]
   static const Color inactiveLabel = Color(0xFFD0C0CA);
 
   static const Color onDark = Color(0xFFFFFFFF);

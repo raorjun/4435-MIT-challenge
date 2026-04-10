@@ -18,6 +18,21 @@ import '../theme/theme.dart';
 const String _kPlaceholderNarration =
     'Tap the on-screen button to repeat the last narration.';
 
+/// Resolves backend URL from compile-time define → emulator fallback → localhost.
+String _defaultBackendUrl() {
+  const fromDefine = String.fromEnvironment(
+    'STEP_LIGHT_BACKEND_URL',
+    defaultValue: '',
+  );
+  if (fromDefine.isNotEmpty) return fromDefine;
+  if (defaultTargetPlatform == TargetPlatform.android) {
+    return 'http://10.0.2.2:5000';
+  }
+  return 'http://127.0.0.1:5000';
+}
+
+// ── Root screen ─────────────────────────────────────────────────────────────
+
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
 
@@ -27,6 +42,12 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _selectedIndex = 0;
+
+  // Shared settings — passed down to both tabs
+  bool _showDebugInfo = false;
+  double _speechRate = 1.0;
+  String _narrationStyle = 'Concise'; // 'Concise' | 'Detailed'
+  String _backendUrl = _defaultBackendUrl();
 
   void _onNavTap(int index) {
     HapticFeedback.lightImpact();
@@ -42,16 +63,22 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       body: IndexedStack(
         index: _selectedIndex,
         children: [
-          _CameraView(isActive: _selectedIndex == 0),
-          _PlaceholderPage(
-            icon: Icons.bookmark_rounded,
-            label: 'Saved Places',
-            message: 'Your saved locations will appear here.',
+          _CameraView(
+            isActive: _selectedIndex == 0,
+            showDebugInfo: _showDebugInfo,
+            speechRate: _speechRate,
+            narrationStyle: _narrationStyle,
+            backendUrl: _backendUrl,
           ),
-          _PlaceholderPage(
-            icon: Icons.settings_rounded,
-            label: 'Settings',
-            message: 'App settings coming soon.',
+          _SettingsPage(
+            showDebugInfo: _showDebugInfo,
+            speechRate: _speechRate,
+            narrationStyle: _narrationStyle,
+            backendUrl: _backendUrl,
+            onShowDebugChanged: (v) => setState(() => _showDebugInfo = v),
+            onSpeechRateChanged: (v) => setState(() => _speechRate = v),
+            onNarrationStyleChanged: (v) => setState(() => _narrationStyle = v),
+            onBackendUrlChanged: (v) => setState(() => _backendUrl = v),
           ),
         ],
       ),
@@ -65,11 +92,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             label: 'Navigate',
           ),
           NavigationDestination(
-            icon: Icon(Icons.bookmark_outline_rounded),
-            selectedIcon: Icon(Icons.bookmark_rounded),
-            label: 'Saved',
-          ),
-          NavigationDestination(
             icon: Icon(Icons.settings_outlined),
             selectedIcon: Icon(Icons.settings_rounded),
             label: 'Settings',
@@ -80,12 +102,22 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 }
 
-// ── Camera view (tab 0) ─────────────────────────────────────────────────────
+// ── Camera / Navigate tab ───────────────────────────────────────────────────
 
 class _CameraView extends StatefulWidget {
-  const _CameraView({required this.isActive});
+  const _CameraView({
+    required this.isActive,
+    required this.showDebugInfo,
+    required this.speechRate,
+    required this.narrationStyle,
+    required this.backendUrl,
+  });
 
   final bool isActive;
+  final bool showDebugInfo;
+  final double speechRate;
+  final String narrationStyle;
+  final String backendUrl;
 
   @override
   State<_CameraView> createState() => _CameraViewState();
@@ -97,7 +129,7 @@ class _CameraViewState extends State<_CameraView> {
   final FlutterTts _tts = FlutterTts();
   final SpeechToText _stt = SpeechToText();
 
-  static const Duration _captureInterval = Duration(seconds: 5);
+  static const Duration _captureInterval = Duration(seconds: 15);
   static const Duration _listenFor = Duration(seconds: 8);
   static const Duration _pauseFor = Duration(seconds: 2);
   static const Duration _requestTimeout = Duration(seconds: 12);
@@ -106,10 +138,6 @@ class _CameraViewState extends State<_CameraView> {
   static const String _defaultDestination = 'the nearest exit';
   static const String _defaultIntent =
       'Help me navigate safely to a nearby exit.';
-  static const String _backendUrlFromDefine = String.fromEnvironment(
-    'STEP_LIGHT_BACKEND_URL',
-    defaultValue: '',
-  );
 
   String _narration = _kPlaceholderNarration;
   String _destination = _defaultDestination;
@@ -129,15 +157,19 @@ class _CameraViewState extends State<_CameraView> {
   @override
   void initState() {
     super.initState();
-    // _initializeSession handles TTS/STT setup → GPS → enter_venue → loop start.
-    // Do NOT call _startCaptureLoop() here directly.
     _initializeSession();
   }
 
   @override
   void didUpdateWidget(covariant _CameraView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Only start/stop the loop after venue init is complete.
+
+    // Re-apply TTS speed when user adjusts it in Settings
+    if (widget.speechRate != oldWidget.speechRate) {
+      _applySpeechRate(widget.speechRate);
+    }
+
+    // Only start/stop the loop after venue init is complete
     if (widget.isActive && !oldWidget.isActive && _venueInitialized) {
       _startCaptureLoop();
     } else if (!widget.isActive && oldWidget.isActive) {
@@ -147,7 +179,6 @@ class _CameraViewState extends State<_CameraView> {
 
   // ── Initialization pipeline ────────────────────────────────────────────────
 
-  /// Single entry point: audio setup → GPS acquisition → venue handshake → loop.
   Future<void> _initializeSession() async {
     await _configureTts();
     await _initializeSpeechToText();
@@ -165,17 +196,13 @@ class _CameraViewState extends State<_CameraView> {
     }
   }
 
-  /// GPS acquisition + /enter_venue handshake.
-  /// All failure paths fall through to camera-only mode — never throws.
   Future<void> _enterVenue() async {
     try {
-      // 1. Check location service is on
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         throw Exception('Location services are disabled on this device.');
       }
 
-      // 2. Check/request permission
       var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
@@ -185,7 +212,6 @@ class _CameraViewState extends State<_CameraView> {
         throw Exception('Location permission denied (status: $permission).');
       }
 
-      // 3. Acquire GPS fix
       if (!mounted) return;
       setState(() => _cameraStatus = 'Getting GPS fix...');
 
@@ -198,13 +224,12 @@ class _CameraViewState extends State<_CameraView> {
       _lastPosition = position;
       print('[Steplight] GPS acquired: ${position.latitude}, ${position.longitude}');
 
-      // 4. Call /enter_venue
       if (!mounted) return;
       setState(() => _cameraStatus = 'Contacting venue service...');
 
       final response = await http
           .post(
-            Uri.parse('${_backendBaseUrl()}/enter_venue'),
+            Uri.parse('${widget.backendUrl}/enter_venue'),
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
               'lat': position.latitude,
@@ -250,21 +275,25 @@ class _CameraViewState extends State<_CameraView> {
   }
 
   Future<void> _configureTts() async {
-    // flutter_tts speech rate scale differs by platform:
-    //   Android → 0.0–2.0, normal = 1.0.  Target 1.5x = 1.5
-    //   iOS     → 0.0–1.0, normal ≈ 0.5.  Target 1.5x ≈ 0.57
-    final rate = Platform.isIOS ? 0.57 : 1.5;
-    await _tts.setSpeechRate(rate);
+    await _applySpeechRate(widget.speechRate);
     await _tts.setPitch(1.0);
+  }
+
+  /// Maps the user-facing rate (0.5–2.0) to the platform TTS rate scale.
+  /// Android: 0.0–2.0 where 1.0 = normal.
+  /// iOS:     0.0–1.0 where ≈0.5 = normal (1.0x maps to 0.5 on iOS).
+  Future<void> _applySpeechRate(double rate) async {
+    final ttsRate = Platform.isIOS ? rate * 0.5 : rate;
+    await _tts.setSpeechRate(ttsRate);
   }
 
   Future<void> _initializeSpeechToText() async {
     final isAvailable = await _stt.initialize(
       onStatus: _handleSpeechStatus,
-      onError: (_) {
+      onError: (e) {
         if (!mounted) return;
         setState(() {
-          _voiceStatus = 'Voice input unavailable. You can still use camera sync.';
+          _voiceStatus = 'Mic error: ${e.errorMsg}. Tap mic to retry.';
           _isListening = false;
         });
       },
@@ -274,7 +303,7 @@ class _CameraViewState extends State<_CameraView> {
     setState(() {
       _isSttReady = isAvailable;
       if (!isAvailable) {
-        _voiceStatus = 'Voice setup failed. Tap again to retry.';
+        _voiceStatus = 'Mic unavailable — check microphone permission in device settings, then tap mic.';
       }
     });
   }
@@ -308,12 +337,10 @@ class _CameraViewState extends State<_CameraView> {
     final hasStarted = await _stt.listen(
       onResult: (result) {
         if (!mounted) return;
-
         final spoken = result.recognizedWords.trim();
         setState(() {
           _voiceStatus = spoken.isEmpty ? 'Listening...' : 'Heard: $spoken';
         });
-
         if (result.finalResult && spoken.isNotEmpty) {
           _applySpokenIntent(spoken);
         }
@@ -337,14 +364,12 @@ class _CameraViewState extends State<_CameraView> {
 
   void _applySpokenIntent(String spokenText) {
     final normalizedDestination = _resolveDestination(spokenText);
-
     setState(() {
       _intent = spokenText;
       _destination = normalizedDestination;
       _voiceStatus = 'Destination set: $normalizedDestination';
       _isListening = false;
     });
-
     _speakNarration('Got it. Heading toward $normalizedDestination.');
   }
 
@@ -358,18 +383,19 @@ class _CameraViewState extends State<_CameraView> {
     if (value.contains('coffee') || value.contains('cafe')) {
       return 'a coffee shop';
     }
-    if (value.contains('food') || value.contains('eat') ||
+    if (value.contains('food') ||
+        value.contains('eat') ||
         value.contains('restaurant')) {
       return 'a food court entrance';
     }
-    if (value.contains('restroom') || value.contains('bathroom') ||
+    if (value.contains('restroom') ||
+        value.contains('bathroom') ||
         value.contains('toilet')) {
       return 'the nearest restroom';
     }
     if (value.contains('exit') || value.contains('outside')) {
       return 'the nearest exit';
     }
-
     return spokenText.trim();
   }
 
@@ -387,23 +413,11 @@ class _CameraViewState extends State<_CameraView> {
     _captureTimer = null;
   }
 
-  String _backendBaseUrl() {
-    if (_backendUrlFromDefine.isNotEmpty) {
-      return _backendUrlFromDefine;
-    }
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      return 'http://10.0.2.2:5000';
-    }
-    return 'http://127.0.0.1:5000';
-  }
-
   Future<Uint8List> _preprocessImage(Uint8List bytes) async {
     final decoded = img.decodeImage(bytes);
     if (decoded == null) return bytes;
-
     final processed =
         decoded.width > 1024 ? img.copyResize(decoded, width: 1024) : decoded;
-
     return Uint8List.fromList(img.encodeJpg(processed, quality: 70));
   }
 
@@ -420,12 +434,12 @@ class _CameraViewState extends State<_CameraView> {
       final processedFrame = await _preprocessImage(frame);
       final request = http.MultipartRequest(
         'POST',
-        Uri.parse('${_backendBaseUrl()}/vision/navigate'),
+        Uri.parse('${widget.backendUrl}/vision/navigate'),
       );
 
       request.fields['destination'] = _destination;
       request.fields['intent'] = _intent;
-      // Send real GPS if available, fall back to 0.0 for compatibility
+      request.fields['narration_style'] = widget.narrationStyle;
       request.fields['lat'] = _lastPosition?.latitude.toString() ?? '0.0';
       request.fields['lng'] = _lastPosition?.longitude.toString() ?? '0.0';
       request.files.add(
@@ -480,11 +494,8 @@ class _CameraViewState extends State<_CameraView> {
   }
 
   void _updateCameraStatus(String status) {
-    // Don't overwrite venue status messages with camera hardware status
-    // once the venue init flow has set a meaningful label.
     if (_venueInitialized) return;
     if (!mounted || _cameraStatus == status) return;
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _cameraStatus == status) return;
       setState(() => _cameraStatus = status);
@@ -530,7 +541,8 @@ class _CameraViewState extends State<_CameraView> {
                     key: _cameraKey,
                     width: double.infinity,
                     height: double.infinity,
-                    showControls: true,
+                    // Flip-camera overlay removed per accessibility design
+                    showControls: false,
                     onStatusChanged: _updateCameraStatus,
                   ),
                 ),
@@ -545,27 +557,29 @@ class _CameraViewState extends State<_CameraView> {
                 Expanded(
                   child: SafeTapButton(
                     label: _isListening ? 'Stop Listening' : 'Voice Destination',
-                    icon: _isListening
-                        ? Icons.mic_off_rounded
-                        : Icons.mic_rounded,
+                    icon: _isListening ? Icons.mic_off : Icons.mic,
                     color: AppTheme.surfaceVariant,
                     textColor: AppTheme.onDark,
                     borderColor: AppTheme.secondarySeed,
                     onTap: _toggleListening,
-                    semanticsLabel: 'Set destination by voice',
+                    semanticsLabel: _isListening
+                        ? 'Stop voice input'
+                        : 'Set destination by voice',
                     height: 88,
+                    iconOnly: true,
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: SafeTapButton(
                     label: 'Repeat Narration',
-                    icon: Icons.volume_up_rounded,
+                    icon: Icons.replay,
                     color: cs.primary,
                     textColor: cs.onPrimary,
                     onTap: _repeatNarration,
                     semanticsLabel: 'Repeat last narration',
                     height: 88,
+                    iconOnly: true,
                   ),
                 ),
               ],
@@ -574,27 +588,30 @@ class _CameraViewState extends State<_CameraView> {
 
           const SizedBox(height: 12),
 
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: AppTheme.surfaceVariant,
-                borderRadius: BorderRadius.circular(AppTheme.cornerRadius),
-                border: Border.all(color: AppTheme.secondarySeed, width: 2),
-              ),
-              child: Text(
-                'Intent: $_intent\nDestination: $_destination\nVoice: $_voiceStatus',
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: AppTheme.onDark,
-                      height: 1.4,
-                    ),
+          // Debug block — only visible when enabled in Settings
+          if (widget.showDebugInfo)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Container(
+                width: double.infinity,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceVariant,
+                  borderRadius: BorderRadius.circular(AppTheme.cornerRadius),
+                  border: Border.all(color: AppTheme.secondarySeed, width: 2),
+                ),
+                child: Text(
+                  'Intent: $_intent\nDestination: $_destination\nVoice: $_voiceStatus',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        color: AppTheme.onDark,
+                        height: 1.4,
+                      ),
+                ),
               ),
             ),
-          ),
 
-          const SizedBox(height: 12),
+          if (widget.showDebugInfo) const SizedBox(height: 12),
 
           NarrationBox(text: _narration),
         ],
@@ -654,18 +671,57 @@ class _StatusBar extends StatelessWidget {
   }
 }
 
-// ── Placeholder pages (tabs 1 & 2) ─────────────────────────────────────────
+// ── Settings tab ────────────────────────────────────────────────────────────
 
-class _PlaceholderPage extends StatelessWidget {
-  const _PlaceholderPage({
-    required this.icon,
-    required this.label,
-    required this.message,
+class _SettingsPage extends StatefulWidget {
+  const _SettingsPage({
+    required this.showDebugInfo,
+    required this.speechRate,
+    required this.narrationStyle,
+    required this.backendUrl,
+    required this.onShowDebugChanged,
+    required this.onSpeechRateChanged,
+    required this.onNarrationStyleChanged,
+    required this.onBackendUrlChanged,
   });
 
-  final IconData icon;
-  final String label;
-  final String message;
+  final bool showDebugInfo;
+  final double speechRate;
+  final String narrationStyle;
+  final String backendUrl;
+  final ValueChanged<bool> onShowDebugChanged;
+  final ValueChanged<double> onSpeechRateChanged;
+  final ValueChanged<String> onNarrationStyleChanged;
+  final ValueChanged<String> onBackendUrlChanged;
+
+  @override
+  State<_SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<_SettingsPage> {
+  late final TextEditingController _urlController;
+
+  @override
+  void initState() {
+    super.initState();
+    _urlController = TextEditingController(text: widget.backendUrl);
+  }
+
+  @override
+  void didUpdateWidget(covariant _SettingsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Keep field in sync if the URL changed externally
+    if (oldWidget.backendUrl != widget.backendUrl &&
+        _urlController.text != widget.backendUrl) {
+      _urlController.text = widget.backendUrl;
+    }
+  }
+
+  @override
+  void dispose() {
+    _urlController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -673,25 +729,223 @@ class _PlaceholderPage extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
 
     return SafeArea(
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 72, color: cs.secondary),
-              const SizedBox(height: 24),
-              Text(label, style: tt.headlineSmall),
-              const SizedBox(height: 12),
-              Text(
-                message,
-                style: tt.bodyLarge
-                    ?.copyWith(color: cs.onSurface.withValues(alpha: 0.75)),
-                textAlign: TextAlign.center,
-              ),
-            ],
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+        children: [
+          // ── Section 1: Voice & Narration ───────────────────────────────────
+          _SectionHeader(label: 'Voice & Narration'),
+
+          // Speech Rate
+          ListTile(
+            minVerticalPadding: 20,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            title: Text(
+              'Speech Rate',
+              style: tt.titleLarge?.copyWith(color: cs.onSurface, fontWeight: FontWeight.w700),
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 8),
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    activeTrackColor: AppTheme.primaryMint,
+                    inactiveTrackColor: AppTheme.outlineColor,
+                    thumbColor: AppTheme.primaryMint,
+                    overlayColor: AppTheme.primaryMint.withValues(alpha: 0.15),
+                    valueIndicatorColor: AppTheme.primaryMint,
+                    valueIndicatorTextStyle:
+                        tt.labelLarge?.copyWith(color: const Color(0xFF18331A)),
+                  ),
+                  child: Slider(
+                    value: widget.speechRate,
+                    min: 0.5,
+                    max: 2.0,
+                    divisions: 3,
+                    label: '${widget.speechRate}×',
+                    onChanged: widget.onSpeechRateChanged,
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: ['0.5×', '1.0×', '1.5×', '2.0×']
+                        .map(
+                          (t) => Text(
+                            t,
+                            style: tt.bodySmall?.copyWith(
+                              color: cs.onSurface.withValues(alpha: 0.55),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
+
+          const Divider(height: 1),
+
+          // Narration Detail
+          ListTile(
+            minVerticalPadding: 20,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            title: Text(
+              'Narration Detail',
+              style: tt.titleLarge?.copyWith(color: cs.onSurface, fontWeight: FontWeight.w700),
+            ),
+            subtitle: Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(
+                    value: 'Concise',
+                    label: Text('Concise'),
+                    icon: Icon(Icons.short_text),
+                  ),
+                  ButtonSegment(
+                    value: 'Detailed',
+                    label: Text('Detailed'),
+                    icon: Icon(Icons.subject),
+                  ),
+                ],
+                selected: {widget.narrationStyle},
+                onSelectionChanged: (s) =>
+                    widget.onNarrationStyleChanged(s.first),
+                style: ButtonStyle(
+                  backgroundColor: WidgetStateProperty.resolveWith((states) {
+                    if (states.contains(WidgetState.selected)) {
+                      return AppTheme.primaryMint.withValues(alpha: 0.18);
+                    }
+                    return Colors.transparent;
+                  }),
+                  foregroundColor: WidgetStateProperty.resolveWith((states) {
+                    if (states.contains(WidgetState.selected)) {
+                      return AppTheme.primaryMint;
+                    }
+                    return AppTheme.inactiveLabel;
+                  }),
+                  side: WidgetStateProperty.all(
+                    const BorderSide(color: AppTheme.outlineColor),
+                  ),
+                  iconColor: WidgetStateProperty.resolveWith((states) {
+                    if (states.contains(WidgetState.selected)) {
+                      return AppTheme.primaryMint;
+                    }
+                    return AppTheme.inactiveLabel;
+                  }),
+                ),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 28),
+
+          // ── Section 2: Developer ───────────────────────────────────────────
+          _SectionHeader(label: 'Developer'),
+
+          // Debug Overlay toggle
+          SwitchListTile(
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            title: Text(
+              'Debug Overlay',
+              style: tt.titleLarge?.copyWith(color: cs.onSurface, fontWeight: FontWeight.w700),
+            ),
+            subtitle: Text(
+              'Show intent and destination text on the Navigate screen.',
+              style: tt.bodyLarge
+                  ?.copyWith(color: cs.onSurface.withValues(alpha: 0.6)),
+            ),
+            value: widget.showDebugInfo,
+            activeThumbColor: AppTheme.primaryMint,
+            activeTrackColor: AppTheme.primaryMint.withValues(alpha: 0.4),
+            onChanged: widget.onShowDebugChanged,
+          ),
+
+          const Divider(height: 1),
+
+          // Backend URL field
+          ListTile(
+            minVerticalPadding: 20,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            title: Text(
+              'Backend URL',
+              style: tt.titleLarge?.copyWith(color: cs.onSurface, fontWeight: FontWeight.w700),
+            ),
+            subtitle: Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: TextField(
+                controller: _urlController,
+                style: tt.bodyMedium?.copyWith(color: cs.onSurface),
+                keyboardType: TextInputType.url,
+                autocorrect: false,
+                decoration: InputDecoration(
+                  hintText: 'http://192.168.x.x:5000',
+                  hintStyle: tt.bodyMedium
+                      ?.copyWith(color: cs.onSurface.withValues(alpha: 0.35)),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius:
+                        BorderRadius.circular(AppTheme.cornerRadius),
+                    borderSide: const BorderSide(
+                        color: AppTheme.outlineColor, width: 2),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius:
+                        BorderRadius.circular(AppTheme.cornerRadius),
+                    borderSide: const BorderSide(
+                        color: AppTheme.primaryMint, width: 2),
+                  ),
+                  filled: true,
+                  fillColor: Colors.black,
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 14),
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.check_rounded,
+                        color: AppTheme.primaryMint),
+                    tooltip: 'Apply URL',
+                    onPressed: () {
+                      final url = _urlController.text.trim();
+                      widget.onBackendUrlChanged(url);
+                      FocusScope.of(context).unfocus();
+                    },
+                  ),
+                ),
+                onSubmitted: (v) {
+                  widget.onBackendUrlChanged(v.trim());
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Section header ──────────────────────────────────────────────────────────
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
+      child: Text(
+        label.toUpperCase(),
+        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              color: AppTheme.primaryMint,
+              letterSpacing: 1.8,
+              fontWeight: FontWeight.w700,
+            ),
       ),
     );
   }

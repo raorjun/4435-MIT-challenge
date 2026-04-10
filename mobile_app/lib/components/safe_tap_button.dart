@@ -4,6 +4,9 @@ import '../theme/theme.dart';
 
 /// A large, high-contrast tap target designed for low-vision users.
 /// Minimum height of 96dp — well above the 48dp accessibility minimum.
+///
+/// Set [iconOnly] to true to show just the icon (text hidden visually but
+/// still present in the semantics label for screen readers).
 class SafeTapButton extends StatelessWidget {
   const SafeTapButton({
     super.key,
@@ -15,6 +18,7 @@ class SafeTapButton extends StatelessWidget {
     this.borderColor,
     this.height = 96,
     this.semanticsLabel,
+    this.iconOnly = false,
   });
 
   final String label;
@@ -24,9 +28,11 @@ class SafeTapButton extends StatelessWidget {
   final Color? textColor;
   final Color? borderColor;
   final double height;
-
-  /// Override the screen-reader label if it differs from [label].
   final String? semanticsLabel;
+
+  /// When true, only the icon is rendered. The [label] is still exposed
+  /// to screen readers via [semanticsLabel] ?? [label].
+  final bool iconOnly;
 
   @override
   Widget build(BuildContext context) {
@@ -52,20 +58,24 @@ class SafeTapButton extends StatelessWidget {
                 ? Border.all(color: borderColor!, width: 3)
                 : null,
           ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 40, color: resolvedTextColor),
-              const SizedBox(width: 16),
-              Text(
-                label,
-                style: tt.headlineSmall?.copyWith(
-                  color: resolvedTextColor,
-                  fontWeight: FontWeight.w700,
+          child: iconOnly
+              ? Center(
+                  child: Icon(icon, size: 40, color: resolvedTextColor),
+                )
+              : Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(icon, size: 40, color: resolvedTextColor),
+                    const SizedBox(width: 16),
+                    Text(
+                      label,
+                      style: tt.headlineSmall?.copyWith(
+                        color: resolvedTextColor,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
-          ),
         ),
       ),
     );

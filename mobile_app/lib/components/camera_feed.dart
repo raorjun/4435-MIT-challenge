@@ -132,6 +132,8 @@ class CameraFeedWindowState extends State<CameraFeedWindow> {
       );
 
       await _controller!.initialize().timeout(_cameraInitTimeout);
+      // Keep flash off at all times — auto-flash causes glare for light-sensitive users.
+      await _controller!.setFlashMode(FlashMode.off);
 
       if (mounted) {
         setState(() => _isInitialized = true);
@@ -177,6 +179,7 @@ class CameraFeedWindowState extends State<CameraFeedWindow> {
 
     try {
       await _controller!.initialize().timeout(_cameraInitTimeout);
+      await _controller!.setFlashMode(FlashMode.off);
       setState(() {});
       _emitStatus('Camera Ready');
     } on CameraException catch (e) {
