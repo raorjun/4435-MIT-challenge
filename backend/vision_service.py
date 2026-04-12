@@ -11,7 +11,7 @@ load_dotenv()
 
 client = genai.Client(api_key=os.getenv('GOOGLE_API_KEY'))
 
-_GEMINI_MODEL = 'gemini-2.0-flash-lite'
+_GEMINI_MODEL = 'models/gemini-3-flash-preview'
 
 # Keywords that identify a Gemini 429 / quota error across SDK versions.
 _RATE_LIMIT_MARKERS = ('429', 'resource_exhausted', 'quota', 'rate limit', 'rateLimitExceeded')
