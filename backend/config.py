@@ -1,10 +1,19 @@
-def get_map_search_queries(venue_name):
+def get_map_search_queries(venue_name, city_hint=""):
+    """Build search queries for a venue map/directory.
+
+    city_hint should be the city (and ideally state) string extracted from the
+    Google Places vicinity field — e.g. "Durham, NC".  Quoting the venue name
+    and appending the city makes Tavily much less likely to return maps for a
+    same-named venue in a different city (e.g. a Vegas mall instead of NC).
+    """
+    loc = f" {city_hint}" if city_hint else ""
+    quoted = f'"{venue_name}"'
     return [
-        f"{venue_name} map site:all-maps.com",
-        f"{venue_name} directory site:mallseeker.com",
-        f"{venue_name} mall directory map PDF",
-        f"{venue_name} floor plan",
-        f"{venue_name} map site:pinterest.com"
+        f"{quoted}{loc} map site:all-maps.com",
+        f"{quoted}{loc} directory site:mallseeker.com",
+        f"{quoted}{loc} mall directory map PDF",
+        f"{quoted}{loc} floor plan",
+        f"{quoted}{loc} map site:pinterest.com",
     ]
 
 
@@ -42,62 +51,52 @@ Return ONLY valid JSON:
 """
 
 
-def get_navigation_prompt(bathrooms_list, stores_list, destination, user_intent,
+def get_navigation_prompt(bathrooms_list, stores_list, destination,
                           venue_name="this location", has_map=False,
                           narration_style="Concise"):
-    # Concise = 1 crisp sentence. Detailed = up to 2 sentences with landmarks + floor.
     detail_rule = (
-        "Give clock-face direction and distance only. One sentence max. No filler."
+        "One sentence max. Clock-face direction and distance only. No filler."
         if narration_style == "Concise"
-        else "Give direction, distance, floor number, and 1-2 nearby landmarks. Two sentences max."
+        else "Two sentences max. Direction, distance, floor number, and one nearby landmark."
     )
 
     if not has_map:
-        # Camera-only mode: use visual cues instead of a floor plan.
-        # Only promise navigation to exits and bathrooms — do not invent store routes.
-        return f"""You are Steplight, a navigation assistant for Aditi, who has coloboma (partial vision, high light sensitivity).
+        return f"""You are Steplight, a navigation assistant for someone with coloboma (partial vision, high light sensitivity).
 
-LOCATION: {venue_name}
-MODE: Camera-only — no floor plan available.
+LOCATION: {venue_name} | DESTINATION: {destination}
 
-You are looking at her LIVE CAMERA FEED.
-
-DESTINATION: {destination}
-USER SAID: "{user_intent}"
+You are looking at the LIVE CAMERA FEED. No floor plan is available.
 
 RULES:
-- Only guide to: exits, restrooms, stairs, elevators. Do NOT invent routes to stores or named destinations you cannot verify.
-- If the destination is a store or unfamiliar location, say "No map available — look for staff or a directory sign."
-- Look for: green EXIT signs, restroom pictograms, stairwell doors, elevator panels, hallway direction signs.
+- Only guide to exits, restrooms, stairs, or elevators visible in the camera.
+- If the destination is a store, say "No map available — look for staff or a directory sign."
 - {detail_rule}
-- Warn about bright windows or skylights if visible (glare risk).
-- NEVER name a venue or building you are not certain of from the camera image alone.
+- Warn about bright windows or skylights (glare risk).
 """
 
-    return f"""You are Steplight, a navigation assistant for Aditi, who has coloboma (partial vision, high light sensitivity).
+    return f"""You are Steplight, a navigation assistant for someone with coloboma (partial vision, high light sensitivity).
 
-LOCATION: {venue_name}
-DESTINATION: {destination}
-USER SAID: "{user_intent}"
+LOCATION: {venue_name} | DESTINATION: {destination}
 
-CRITICAL: You are looking at her LIVE CAMERA FEED and the venue floor plan(s).
+SOURCE OF TRUTH ORDER:
+1. LIVE CAMERA FEED — always primary.
+2. Floor plan below — supplementary reference only.
+
+If the camera shows a scene that does NOT match this venue (home, street, wrong stores),
+IGNORE the floor plan and navigate by visible cues only.
 
 KNOWN BATHROOMS:
-{bathrooms_list or "None extracted."}
+{bathrooms_list or "None."}
 
 KNOWN STORES / LANDMARKS:
-{stores_list or "None extracted."}
+{stores_list or "None."}
 
 TASK:
-1. Identify which floor she is on (escalators, signs, visible stores).
-2. Determine her orientation (facing into or away from visible entrances).
-3. Route to the destination using the floor plan — same-floor bathrooms only.
-4. Give turn instructions FIRST (say "turn around" if needed), then distance, then 1 landmark.
-
-EXAMPLE: "Turn around from Belk and walk 300 feet — restroom on your left near J.Jill (Floor 1)."
+1. Check the camera — are you inside this venue? If not, ignore the floor plan.
+2. If yes, give turn instructions first, then distance, then one landmark.
 
 RULES:
 - {detail_rule}
-- Include floor number for bathrooms.
+- Include floor number for bathrooms only when the map is confirmed relevant.
 - Warn about glare if bright windows or skylights are visible.
 """

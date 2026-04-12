@@ -48,6 +48,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   double _speechRate = 1.0;
   String _narrationStyle = 'Concise'; // 'Concise' | 'Detailed'
   String _backendUrl = _defaultBackendUrl();
+  bool _useMap = false; // off by default — maps are often wrong; flip on at a real venue
 
   void _onNavTap(int index) {
     HapticFeedback.lightImpact();
@@ -69,16 +70,19 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             speechRate: _speechRate,
             narrationStyle: _narrationStyle,
             backendUrl: _backendUrl,
+            useMap: _useMap,
           ),
           _SettingsPage(
             showDebugInfo: _showDebugInfo,
             speechRate: _speechRate,
             narrationStyle: _narrationStyle,
             backendUrl: _backendUrl,
+            useMap: _useMap,
             onShowDebugChanged: (v) => setState(() => _showDebugInfo = v),
             onSpeechRateChanged: (v) => setState(() => _speechRate = v),
             onNarrationStyleChanged: (v) => setState(() => _narrationStyle = v),
             onBackendUrlChanged: (v) => setState(() => _backendUrl = v),
+            onUseMapChanged: (v) => setState(() => _useMap = v),
           ),
         ],
       ),
@@ -111,6 +115,7 @@ class _CameraView extends StatefulWidget {
     required this.speechRate,
     required this.narrationStyle,
     required this.backendUrl,
+    required this.useMap,
   });
 
   final bool isActive;
@@ -118,6 +123,7 @@ class _CameraView extends StatefulWidget {
   final double speechRate;
   final String narrationStyle;
   final String backendUrl;
+  final bool useMap;
 
   @override
   State<_CameraView> createState() => _CameraViewState();
@@ -132,16 +138,13 @@ class _CameraViewState extends State<_CameraView> {
   static const Duration _captureInterval = Duration(seconds: 15);
   static const Duration _listenFor = Duration(seconds: 8);
   static const Duration _pauseFor = Duration(seconds: 2);
-  static const Duration _requestTimeout = Duration(seconds: 12);
+  static const Duration _requestTimeout = Duration(seconds: 25);
   // enter_venue does Places API + Tavily search + Gemini extraction — allow more time
   static const Duration _venueTimeout = Duration(seconds: 25);
   static const String _defaultDestination = 'the nearest exit';
-  static const String _defaultIntent =
-      'Help me navigate safely to a nearby exit.';
 
   String _narration = _kPlaceholderNarration;
   String _destination = _defaultDestination;
-  String _intent = _defaultIntent;
   String _voiceStatus = 'Tap voice button and say where you want to go.';
   String _cameraStatus = 'Initializing...';
   bool _isSyncing = false;
@@ -234,6 +237,7 @@ class _CameraViewState extends State<_CameraView> {
             body: jsonEncode({
               'lat': position.latitude,
               'lng': position.longitude,
+              'use_map': widget.useMap,
             }),
           )
           .timeout(_venueTimeout);
@@ -334,6 +338,13 @@ class _CameraViewState extends State<_CameraView> {
       if (!_isSttReady) return;
     }
 
+    // Cancel any in-progress session before starting a new one.
+    // On some platforms listen() silently fails if the previous session wasn't
+    // fully torn down — cancel() guarantees a clean slate.
+    if (_stt.isListening) {
+      await _stt.cancel();
+    }
+
     // `listen()` is typed Future<bool> but some native implementations return null.
     // Receive as dynamic and compare with == true to avoid the cast crash.
     final dynamic listenResult = await _stt.listen(
@@ -366,40 +377,17 @@ class _CameraViewState extends State<_CameraView> {
   }
 
   void _applySpokenIntent(String spokenText) {
-    final normalizedDestination = _resolveDestination(spokenText);
+    // Stop the STT session immediately so it's fully released before the user
+    // tries to tap the mic button again for a second destination change.
+    _stt.stop();
+
+    final destination = spokenText.trim().isEmpty ? _defaultDestination : spokenText.trim();
     setState(() {
-      _intent = spokenText;
-      _destination = normalizedDestination;
-      _voiceStatus = 'Destination set: $normalizedDestination';
+      _destination = destination;
+      _voiceStatus = 'Destination set: $destination';
       _isListening = false;
     });
-    _speakNarration('Got it. Heading toward $normalizedDestination.');
-  }
-
-  String _resolveDestination(String spokenText) {
-    final value = spokenText.toLowerCase().trim();
-    if (value.isEmpty) return _defaultDestination;
-
-    if (value.contains('sports') || value.contains('athletic')) {
-      return 'a sports clothing store';
-    }
-    if (value.contains('coffee') || value.contains('cafe')) {
-      return 'a coffee shop';
-    }
-    if (value.contains('food') ||
-        value.contains('eat') ||
-        value.contains('restaurant')) {
-      return 'a food court entrance';
-    }
-    if (value.contains('restroom') ||
-        value.contains('bathroom') ||
-        value.contains('toilet')) {
-      return 'the nearest restroom';
-    }
-    if (value.contains('exit') || value.contains('outside')) {
-      return 'the nearest exit';
-    }
-    return spokenText.trim();
+    _speakNarration('Got it. Heading toward $destination.');
   }
 
   // ── Capture loop ───────────────────────────────────────────────────────────
@@ -441,7 +429,6 @@ class _CameraViewState extends State<_CameraView> {
       );
 
       request.fields['destination'] = _destination;
-      request.fields['intent'] = _intent;
       request.fields['narration_style'] = widget.narrationStyle;
       request.fields['lat'] = _lastPosition?.latitude.toString() ?? '0.0';
       request.fields['lng'] = _lastPosition?.longitude.toString() ?? '0.0';
@@ -620,7 +607,7 @@ class _CameraViewState extends State<_CameraView> {
                   border: Border.all(color: AppTheme.secondarySeed, width: 2),
                 ),
                 child: Text(
-                  'Intent: $_intent\nDestination: $_destination\nVoice: $_voiceStatus',
+                  'Destination: $_destination\nVoice: $_voiceStatus',
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         color: AppTheme.onDark,
                         height: 1.4,
@@ -697,20 +684,24 @@ class _SettingsPage extends StatefulWidget {
     required this.speechRate,
     required this.narrationStyle,
     required this.backendUrl,
+    required this.useMap,
     required this.onShowDebugChanged,
     required this.onSpeechRateChanged,
     required this.onNarrationStyleChanged,
     required this.onBackendUrlChanged,
+    required this.onUseMapChanged,
   });
 
   final bool showDebugInfo;
   final double speechRate;
   final String narrationStyle;
   final String backendUrl;
+  final bool useMap;
   final ValueChanged<bool> onShowDebugChanged;
   final ValueChanged<double> onSpeechRateChanged;
   final ValueChanged<String> onNarrationStyleChanged;
   final ValueChanged<String> onBackendUrlChanged;
+  final ValueChanged<bool> onUseMapChanged;
 
   @override
   State<_SettingsPage> createState() => _SettingsPageState();
@@ -863,7 +854,32 @@ class _SettingsPageState extends State<_SettingsPage> {
 
           const SizedBox(height: 28),
 
-          // ── Section 2: Developer ───────────────────────────────────────────
+          // ── Section 2: Navigation Mode ─────────────────────────────────────
+          _SectionHeader(label: 'Navigation Mode'),
+
+          SwitchListTile(
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            title: Text(
+              'Search for Venue Map',
+              style: tt.titleLarge?.copyWith(color: cs.onSurface, fontWeight: FontWeight.w700),
+            ),
+            subtitle: Text(
+              widget.useMap
+                  ? 'On — will search for a floor plan on entry. Turn off if map is wrong.'
+                  : 'Off — camera only. No map will be loaded or saved.',
+              style: tt.bodyLarge
+                  ?.copyWith(color: cs.onSurface.withValues(alpha: 0.6)),
+            ),
+            value: widget.useMap,
+            activeThumbColor: AppTheme.primaryMint,
+            activeTrackColor: AppTheme.primaryMint.withValues(alpha: 0.4),
+            onChanged: widget.onUseMapChanged,
+          ),
+
+          const SizedBox(height: 28),
+
+          // ── Section 3: Developer ───────────────────────────────────────────
           _SectionHeader(label: 'Developer'),
 
           // Debug Overlay toggle
@@ -875,7 +891,7 @@ class _SettingsPageState extends State<_SettingsPage> {
               style: tt.titleLarge?.copyWith(color: cs.onSurface, fontWeight: FontWeight.w700),
             ),
             subtitle: Text(
-              'Show intent and destination text on the Navigate screen.',
+              'Show destination and voice status on the Navigate screen.',
               style: tt.bodyLarge
                   ?.copyWith(color: cs.onSurface.withValues(alpha: 0.6)),
             ),

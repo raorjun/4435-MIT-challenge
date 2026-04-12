@@ -11,17 +11,11 @@ CORS(app)
 
 # ── In-memory session state ─────────────────────────────────────────────────
 
-# Single-user venue cache.  Keys written by /enter_venue, read by /vision/navigate.
-# map_data: list of (bytes, mime_type) — cached to avoid re-downloading on every tick.
 venue_cache: dict = {
-    "current": {"bathrooms": [], "stores": [], "address": "Unknown", "map_data": []}
+    "current": {"bathrooms": [], "stores": [], "address": "Unknown", "has_map": False}
 }
 
-# Counts navigate calls since the last enter_venue.
-# call 0 → first call → send map images; call 1+ → text context only.
-_nav_call_count: int = 0
-
-# Server-side rate guard: minimum gap between Gemini calls (Flutter sends every 15 s).
+# Server-side rate guard: minimum gap between Gemini calls.
 _MIN_NAVIGATE_INTERVAL: float = 12.0  # seconds
 _last_navigate_time: float = 0.0
 
@@ -30,23 +24,20 @@ _last_navigate_time: float = 0.0
 
 @app.route('/enter_venue', methods=['POST'])
 def enter_venue():
-    global _nav_call_count
-    _nav_call_count = 0          # reset session counter on each venue entry
-
     data = request.json or {}
     lat, lng = data.get('lat'), data.get('lng')
 
-    venue_name, address = get_venue_context(lat, lng)
-    map_url = find_venue_map(address, venue_name)
+    use_map = data.get('use_map', True)
 
-    # Base cache — always written so the VLM knows the venue even without a map
+    venue_name, address = get_venue_context(lat, lng)
+    map_url = find_venue_map(address, venue_name) if use_map else None
+
     base_cache: dict = {
         "bathrooms": [],
         "stores": [],
         "address": address,
         "venue_name": venue_name or "Unknown Venue",
         "has_map": False,
-        "map_data": [],
     }
 
     if not map_url:
@@ -66,19 +57,13 @@ def enter_venue():
 
         all_bathrooms: list = []
         all_stores: list = []
-        map_data: list[tuple[bytes, str]] = []   # (raw_bytes, mime_type)
 
         for single_url in map_url:
             resp = http_requests.get(single_url, timeout=15)
             mime = 'image/webp' if single_url.endswith('.webp') else 'image/jpeg'
-
-            # Extract structured data (one Gemini call per map, at enter_venue time only)
             extracted = extract_venue_data(resp.content, mime, single_url)
             all_bathrooms.extend(extracted.get('bathrooms', []))
             all_stores.extend(extracted.get('stores', []))
-
-            # Cache the raw bytes so navigate calls can reuse them without re-downloading
-            map_data.append((resp.content, mime))
 
         venue_cache['current'] = {
             'bathrooms': all_bathrooms,
@@ -87,7 +72,6 @@ def enter_venue():
             'venue_name': venue_name or "Unknown Venue",
             'has_map': True,
             'map_url': map_url,
-            'map_data': map_data,
         }
 
         return jsonify({
@@ -109,18 +93,17 @@ def enter_venue():
 
 @app.route("/vision/navigate", methods=["POST"])
 def navigate():
-    """Called by Flutter every 15 s.  Returns narration JSON or 503 on quota exhaustion."""
-    global _nav_call_count, _last_navigate_time
+    """Called by Flutter every 15 s. Returns narration JSON or 503 on quota exhaustion."""
+    global _last_navigate_time
 
     image_file = request.files.get('image')
     if not image_file:
         return jsonify({"error": "No image provided"}), 400
 
-    destination    = request.form.get('destination', 'the nearest exit')
-    intent         = request.form.get('intent', '')
+    destination     = request.form.get('destination', 'the nearest exit')
     narration_style = request.form.get('narration_style', 'Concise')
 
-    # ── Server-side rate guard ──────────────────────────────────────────────
+    # Server-side rate guard
     now = time.time()
     elapsed = now - _last_navigate_time
     if elapsed < _MIN_NAVIGATE_INTERVAL:
@@ -130,26 +113,16 @@ def navigate():
     _last_navigate_time = now
     image_bytes = image_file.read()
 
-    # ── Session call counter ────────────────────────────────────────────────
-    is_first_call = (_nav_call_count == 0)
-    _nav_call_count += 1
-
-    current_venue = venue_cache.get('current', {})
-
     try:
         narration = get_spatial_narration(
             camera_bytes=image_bytes,
             destination=destination,
-            venue_data=current_venue,
-            user_intent=intent,
+            venue_data=venue_cache.get('current', {}),
             narration_style=narration_style,
-            is_first_call=is_first_call,
         )
         return jsonify({"narration": narration})
 
     except RateLimitError:
-        # Roll back the counter so the next request retries as if it were the same call
-        _nav_call_count = max(0, _nav_call_count - 1)
         return jsonify({
             "narration": "System busy — please wait.",
             "rate_limited": True,
@@ -158,9 +131,8 @@ def navigate():
 
 @app.route('/debug/cache', methods=['GET'])
 def debug_cache():
-    """Returns the current venue cache (bytes omitted for readability)."""
-    safe = {k: v for k, v in venue_cache.get('current', {}).items() if k != 'map_data'}
-    safe['map_images_cached'] = len(venue_cache.get('current', {}).get('map_data', []))
+    """Returns the current venue cache."""
+    safe = {k: v for k, v in venue_cache.get('current', {}).items()}
     return jsonify(safe)
 
 

@@ -70,22 +70,14 @@ def get_spatial_narration(
     camera_bytes: bytes,
     destination: str,
     venue_data: dict,
-    user_intent: str = "",
     narration_style: str = "Concise",
-    is_first_call: bool = True,
 ) -> str:
     """
     Build the Gemini request for one navigation tick.
 
-    Token-saving session strategy
-    ──────────────────────────────
-    First call (is_first_call=True):
-      camera frame + cached map image bytes + full system prompt
-      → Gemini sees the floor plan once and anchors its orientation.
-
-    Subsequent calls (is_first_call=False):
-      camera frame + text-only context (store/bathroom list) + prompt
-      → No map images re-sent; tokens spent only on the live frame.
+    Camera frame is always sent.  When a venue map was loaded at entry, the
+    extracted store/bathroom list is injected as text — no map image bytes are
+    re-sent.  This keeps every navigate call stateless and the camera primary.
     """
     bathrooms_list = "\n".join([
         f"- {b.get('name', 'Restroom')} (Floor {b.get('floor', '?')}): "
@@ -102,34 +94,21 @@ def get_spatial_narration(
     has_map = venue_data.get('has_map', False)
 
     full_prompt = get_navigation_prompt(
-        bathrooms_list, stores_list, destination, user_intent,
+        bathrooms_list, stores_list, destination,
         venue_name=venue_name, has_map=has_map, narration_style=narration_style,
     )
 
-    # Camera frame is always included
     contents: list = [types.Part.from_bytes(data=camera_bytes, mime_type='image/jpeg')]
 
-    if is_first_call and has_map:
-        # Send cached map bytes so Gemini can build spatial orientation once.
-        map_data: list[tuple[bytes, str]] = venue_data.get('map_data', [])
-        for map_bytes_item, mime in map_data:
-            contents.append(types.Part.from_bytes(data=map_bytes_item, mime_type=mime))
-        if map_data:
-            contents.append(
-                "CONTEXT: The image(s) above include the venue floor plan. "
-                "Use them with the camera frame to orient the user."
-            )
-        print(f"[Vision] First call — sending {len(map_data)} map image(s) + camera frame.")
-    elif has_map:
-        # Subsequent calls: inject store directory as text only — no image re-download.
+    if has_map:
         contents.append(
-            "CONTEXT: You have already analyzed the venue floor plan in a prior call. "
-            "Use the store/bathroom list below and the current camera frame only. "
-            "Do not request the map image again.\n\n"
+            "CONTEXT: The venue floor plan was analyzed at entry. "
+            "Use the store/bathroom list below as a reference ONLY if the camera "
+            "confirms you are inside this venue — otherwise ignore it.\n\n"
             f"STORES:\n{stores_list or 'None.'}\n\n"
             f"BATHROOMS:\n{bathrooms_list or 'None.'}"
         )
-        print("[Vision] Subsequent call — camera frame + text context only (no map image).")
+        print("[Vision] Camera frame + text venue context.")
     else:
         print("[Vision] Camera-only mode — no map available.")
 

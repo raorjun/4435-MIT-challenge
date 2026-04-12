@@ -59,7 +59,6 @@ def get_venue_context(latitude, longitude):
         ("hospital", 1000),
         ("transit_station", 1000),
         ("airport", 1500),
-        ("establishment", 400),   # last-resort fallback
     ]
 
     for place_type, radius in searches:
@@ -106,19 +105,21 @@ def find_venue_map(address_string, venue_name=None):
         print("Error: TAVILY_API_KEY not found.")
         return None
 
-    # Build search term: venue name + city to prevent cross-city mixups
-    # vicinity from Places API is typically "123 Main St, Durham" — grab city after last comma
+    # Build search term and location hint separately.
+    # vicinity from Places API is "123 Main St, Durham" or "Durham, NC" — keep
+    # everything after the first comma as the city/state hint so that Tavily
+    # searches are scoped to the right geography and cannot match a same-named
+    # venue in another city (e.g. a Vegas mall instead of NC).
     city_hint = ""
     if address_string and address_string != "Unknown Location":
         parts = address_string.split(",")
         if len(parts) >= 2:
-            city_hint = parts[-1].strip()
+            # Use all parts after the street number/name — gives "Durham, NC" etc.
+            city_hint = ", ".join(p.strip() for p in parts[1:])
 
     search_term = venue_name if venue_name else address_string
-    if city_hint and venue_name and city_hint.lower() not in venue_name.lower():
-        search_term = f"{venue_name} {city_hint}"
 
-    queries = get_map_search_queries(search_term)
+    queries = get_map_search_queries(search_term, city_hint)
 
     headers = {"Content-Type": "application/json"}
     url = "https://api.tavily.com/search"
