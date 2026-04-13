@@ -151,6 +151,8 @@ class _CameraViewState extends State<_CameraView> {
   bool _isRequestInFlight = false;
   bool _isSttReady = false;
   bool _isListening = false;
+  bool _isSpeakingNarration = false;
+  String _lastSpokenNarration = '';
   // Guards _startCaptureLoop from firing before venue init completes
   bool _venueInitialized = false;
   // Stored after GPS acquisition; reused in navigate calls
@@ -279,6 +281,19 @@ class _CameraViewState extends State<_CameraView> {
   }
 
   Future<void> _configureTts() async {
+    await _tts.awaitSpeakCompletion(true);
+    _tts.setStartHandler(() {
+      _isSpeakingNarration = true;
+    });
+    _tts.setCompletionHandler(() {
+      _isSpeakingNarration = false;
+    });
+    _tts.setCancelHandler(() {
+      _isSpeakingNarration = false;
+    });
+    _tts.setErrorHandler((_) {
+      _isSpeakingNarration = false;
+    });
     await _applySpeechRate(widget.speechRate);
     await _tts.setPitch(1.0);
   }
@@ -476,6 +491,12 @@ class _CameraViewState extends State<_CameraView> {
           ? (parsed['narration']?.toString() ?? _kPlaceholderNarration)
           : _kPlaceholderNarration;
 
+      // Backend sends this while a previous request is still within its
+      // minimum interval. Keep current guidance and avoid speaking it.
+      if (_isTransientProcessingNarration(narration)) {
+        return;
+      }
+
       if (!mounted) return;
       setState(() => _narration = narration);
       HapticFeedback.lightImpact();
@@ -495,8 +516,29 @@ class _CameraViewState extends State<_CameraView> {
     }
   }
 
-  Future<void> _speakNarration(String text) async {
-    await _tts.stop();
+  bool _isTransientProcessingNarration(String text) {
+    final normalized = text.trim().toLowerCase();
+    return normalized.contains('processing') &&
+        normalized.contains('next update in');
+  }
+
+  Future<void> _speakNarration(String text, {bool interrupt = false}) async {
+    final normalized = text.trim();
+    if (normalized.isEmpty) return;
+
+    // Avoid choppy audio when backend repeats the same line.
+    if (!interrupt && normalized == _lastSpokenNarration) {
+      return;
+    }
+
+    if (interrupt) {
+      await _tts.stop();
+      _isSpeakingNarration = false;
+    } else if (_isSpeakingNarration) {
+      return;
+    }
+
+    _lastSpokenNarration = normalized;
     await _tts.speak(text);
   }
 
@@ -511,7 +553,7 @@ class _CameraViewState extends State<_CameraView> {
 
   void _repeatNarration() {
     HapticFeedback.lightImpact();
-    _speakNarration(_narration);
+    _speakNarration(_narration, interrupt: true);
   }
 
   @override
