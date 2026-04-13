@@ -377,8 +377,6 @@ class _CameraViewState extends State<_CameraView> {
   }
 
   void _applySpokenIntent(String spokenText) {
-    // Stop the STT session immediately so it's fully released before the user
-    // tries to tap the mic button again for a second destination change.
     _stt.stop();
 
     final destination = spokenText.trim().isEmpty ? _defaultDestination : spokenText.trim();
@@ -387,7 +385,11 @@ class _CameraViewState extends State<_CameraView> {
       _voiceStatus = 'Destination set: $destination';
       _isListening = false;
     });
-    _speakNarration('Got it. Heading toward $destination.');
+
+    // Fire guidance immediately instead of waiting up to 15 s for the next tick.
+    // The narration response itself confirms the destination — no separate "Got it."
+    _tts.stop();
+    _captureAndNavigate();
   }
 
   // ── Capture loop ───────────────────────────────────────────────────────────
